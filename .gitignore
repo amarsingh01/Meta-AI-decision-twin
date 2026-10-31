@@ -1,0 +1,29 @@
+# Secrets and private data never leave the machine
+.env
+.env.*
+*.env
+secrets/
+data/private/
+*.pem
+*.key
+.modal.toml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+.next/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
