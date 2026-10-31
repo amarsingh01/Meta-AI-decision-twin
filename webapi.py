@@ -60,6 +60,7 @@ def create_api(
     web_dir: Path,
     launch: Callable[[str, str, str], None],
     read_build: Callable[[str], bytes | None] = lambda run_id: None,
+    read_shot: Callable[[str], bytes | None] = lambda run_id: None,
 ) -> FastAPI:
     if len(access_token) < 16:
         raise ValueError("access token is too short")
@@ -130,10 +131,21 @@ def create_api(
 
     @api.get("/built/{run_id}/{path:path}")
     def built(run_id: str, path: str = ""):
-        found = _build_file(run_id, path or "index.html") or _build_file(run_id, f"{path.rstrip('/')}/index.html")
+        found = (
+            _build_file(run_id, path or "index.html")
+            or _build_file(run_id, f"{path.rstrip('/')}/index.html".lstrip("/"))
+            or (None if path else _build_file(run_id, "public/index.html"))
+        )
         if not found:
             raise HTTPException(404)
         return Response(content=found[0], media_type=found[1])
+
+    @api.get("/api/runs/{run_id}/screenshot.png")
+    def screenshot(run_id: str):
+        data = read_shot(run_id) if RUN_ID.match(run_id) else None
+        if not data or not data.startswith(b"\x89PNG"):
+            raise HTTPException(404)
+        return Response(content=data, media_type="image/png")
 
     @api.get("/api/runs/{run_id}/build.tar.gz")
     def build_archive(run_id: str):

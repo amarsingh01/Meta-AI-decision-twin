@@ -5,6 +5,7 @@ Dependency-injected (worker, twin, event log) so the whole loop is unit-tested w
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -43,6 +44,15 @@ SELF_DECIDE = (
 )
 
 
+_PROSE_TAIL = re.compile(r"\s+\(.*$|\s*;\s*(curl|echo).*$")
+
+
+def clean_test_command(raw: str) -> str:
+    """Workers sometimes annotate the command ("npm test (6 pass)"); keep the command itself."""
+    cmd = _PROSE_TAIL.sub("", (raw or "").strip().splitlines()[0] if raw and raw.strip() else "").strip()
+    return cmd or "npm test 2>/dev/null || python3 -m pytest -q"
+
+
 def _decision_event(d: Decision) -> dict:
     return d.model_dump(mode="json")
 
@@ -67,7 +77,7 @@ def run_build(task: str, worker: Worker, twin: Twin, log: EventLog, limits: Limi
     """Drive one build to completion. Returns a summary; every step is also in the event log."""
     decisions = fix_rounds = 0
     message = f"TASK FROM THE OWNER:\n{task}\n\nRead AGENTS.md for how we work, then start."
-    finished, outcome = False, "stopped"
+    finished, outcome, run_cmd = False, "stopped", None
 
     for turn in range(1, limits.max_turns + 1):
         result = worker.send(message)
@@ -109,8 +119,9 @@ def run_build(task: str, worker: Worker, twin: Twin, log: EventLog, limits: Limi
             continue
 
         if parsed.done:
-            rc, out = worker.run(parsed.done.test or "python3 -m pytest -q", timeout=600)
-            log.emit("verification", turn=turn, command=parsed.done.test, passed=rc == 0, output=out[-3000:])
+            test_cmd = clean_test_command(parsed.done.test)
+            rc, out = worker.run(test_cmd, timeout=600)
+            log.emit("verification", turn=turn, command=test_cmd, passed=rc == 0, output=out[-3000:])
             if rc != 0:
                 fix_rounds += 1
                 if fix_rounds > limits.max_fix_rounds:
@@ -124,12 +135,12 @@ def run_build(task: str, worker: Worker, twin: Twin, log: EventLog, limits: Limi
                 log.emit(
                     "error", turn=turn, message=f"Twin could not review the build: {exc}; accepting on green tests"
                 )
-                finished, outcome = True, "accepted_on_tests"
+                finished, outcome, run_cmd = True, "accepted_on_tests", parsed.done.run
                 break
             decisions += 1
             log.emit("decision", turn=turn, decision=_decision_event(review))
             if review.chosen == "A" or fix_rounds >= limits.max_fix_rounds:
-                finished, outcome = True, "accepted"
+                finished, outcome, run_cmd = True, "accepted", parsed.done.run
                 log.emit("note", turn=turn, message="Build accepted", run=parsed.done.run, summary=parsed.done.summary)
                 break
             fix_rounds += 1
@@ -141,4 +152,4 @@ def run_build(task: str, worker: Worker, twin: Twin, log: EventLog, limits: Limi
     usage = worker.usage()
     summary = {"finished": finished, "outcome": outcome, "decisions": decisions, "usage": usage}
     log.emit("run_finished", **summary)
-    return summary
+    return {**summary, "run": run_cmd}

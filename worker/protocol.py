@@ -32,6 +32,9 @@ important choice for you. Follow these rules for this whole session:
   "options": [{{"id": "A", "label": "short option"}}, {{"id": "B", "label": "short option"}}]}}
 {REQ_CLOSE}
    Give 2 to 4 genuinely different options with ids A, B, C, D. Then wait for the decision.
+   A build like this normally has 6 to 10 such decisions. Typical ones: stack, data source,
+   how signals are computed, how untrusted input is validated, page layout, how freshness and
+   uncertainty are shown, testing approach, and whether the work is finished.
 3. Small mechanical steps (creating a folder, fixing a typo, running a command) need no question.
 4. When the decision arrives, carry it out exactly, then continue to the next step.
 5. Write tests and run them. Never claim something works without running it.

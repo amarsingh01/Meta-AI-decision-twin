@@ -103,3 +103,12 @@ def test_review_failure_does_not_crash_the_run():
     worker = FakeWorker([DONE])
     out = run_build("x", worker, DecisionTwin(Brain(["junk", "junk"])), EventLog({}, "r4"))
     assert out["finished"] and out["outcome"] == "accepted_on_tests"
+
+
+def test_clean_test_command():
+    from orchestrator.loop import clean_test_command
+
+    assert clean_test_command("cd /work/site && npm test (6 pass)") == "cd /work/site && npm test"
+    assert clean_test_command("npm test; curl smoke test: GET / -> 200") == "npm test"
+    assert clean_test_command("python3 -m pytest -q") == "python3 -m pytest -q"
+    assert "pytest" in clean_test_command("")

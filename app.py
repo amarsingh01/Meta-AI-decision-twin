@@ -73,7 +73,7 @@ def build_job(run_id: str, task: str, brain: str = "spark") -> dict:
     try:
         worker.start(WORKER_RULES)
         summary = run_build(task, worker, DecisionTwin(twin_brain, profile), log)
-        _save_build(run_id, worker, log)
+        _save_build(run_id, worker, log, start_cmd=summary.get("run"))
         return summary
     except Exception as exc:  # surface any crash in the UI, then re-raise for Modal logs
         log.emit("error", message=f"Run crashed: {type(exc).__name__}: {str(exc)[:400]}")
@@ -85,7 +85,7 @@ def build_job(run_id: str, task: str, brain: str = "spark") -> dict:
         worker.stop()
 
 
-def _save_build(run_id: str, worker, log) -> None:
+def _save_build(run_id: str, worker, log, start_cmd: str | None = None) -> None:
     """Keep what the builder made, so it can be inspected after the sandbox is gone."""
     import io
     import tarfile
@@ -100,8 +100,16 @@ def _save_build(run_id: str, worker, log) -> None:
     (out / "site.tar.gz").write_bytes(data)
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         files = sorted(m.name.removeprefix("./") for m in tar.getmembers() if m.isfile())
+    shot = None
+    if start_cmd:
+        try:
+            shot = worker.screenshot(start_cmd)
+        except Exception as exc:
+            log.emit("note", message=f"Could not photograph the built site: {exc}")
+        if shot:
+            (out / "screenshot.png").write_bytes(shot)
     builds.commit()
-    log.emit("note", message=f"Saved the built project ({len(files)} files)", files=files[:200])
+    log.emit("note", message=f"Saved the built project ({len(files)} files)", files=files[:200], screenshot=bool(shot))
 
 
 def _set_index(run_id: str, **fields) -> None:
@@ -158,4 +166,10 @@ def web():
             builds.reload()
         return path.read_bytes() if path.exists() else None
 
-    return create_api(runs, os.environ["ACCESS_TOKEN"], Path("/root/web"), launch, read_build)
+    def read_shot(run_id: str) -> bytes | None:
+        path = Path(BUILDS) / run_id / "screenshot.png"
+        if not path.exists():
+            builds.reload()
+        return path.read_bytes() if path.exists() else None
+
+    return create_api(runs, os.environ["ACCESS_TOKEN"], Path("/root/web"), launch, read_build, read_shot)

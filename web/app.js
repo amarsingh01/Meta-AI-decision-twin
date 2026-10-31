@@ -153,7 +153,8 @@ function buildCard(ev) {
     el("div", { class: "links" },
       el("a", { href: `/built/${id}/`, target: "_blank", rel: "noopener noreferrer" }, "Open the site it built ↗"),
       el("a", { href: `/api/runs/${id}/build.tar.gz` }, "Download the source")),
-    el("p", { class: "hint" }, "Opens in an isolated sandbox: the generated code cannot reach this dashboard or the internet."),
+    ev.screenshot ? el("img", { class: "shot", src: `/api/runs/${id}/screenshot.png`, alt: "Screenshot of the site the builder made, taken inside its sandbox" }) : null,
+    el("p", { class: "hint" }, ev.screenshot ? "Screenshot taken inside the builder's sandbox, where the site's own server was running." : "Opens in an isolated sandbox: the generated code cannot reach this dashboard or the internet."),
     el("details", {}, el("summary", {}, `${ev.files.length} files`), el("pre", {}, ev.files.join("\n"))));
 }
 

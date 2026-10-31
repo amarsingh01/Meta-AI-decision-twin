@@ -41,9 +41,24 @@ worker_image = (
         f"useradd --create-home --shell /bin/bash {WORKER_USER}",
         f"mkdir -p {SITE_DIR} && chown -R {WORKER_USER}:{WORKER_USER} /work",
         f"mkdir -p {GATEWAY_DIR} && chmod 700 {GATEWAY_DIR}",
-        "pip install --no-cache-dir pytest==9.1.1",
+        "pip install --no-cache-dir pytest==9.1.1 playwright==1.63.0",
+        "playwright install --with-deps chromium",
+        "chmod -R a+rX /root/.cache/ms-playwright && mv /root/.cache/ms-playwright /opt/ms-playwright",
     )
+    .env({"PLAYWRIGHT_BROWSERS_PATH": "/opt/ms-playwright"})
 )
+
+_SHOT = """
+import sys
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    b = p.chromium.launch()
+    page = b.new_page(viewport={"width": 1280, "height": 800})
+    page.goto(sys.argv[1], wait_until="networkidle", timeout=30000)
+    page.wait_for_timeout(1500)
+    page.screenshot(path=sys.argv[2], full_page=True)
+    b.close()
+"""
 
 
 @dataclass(frozen=True)
@@ -108,6 +123,22 @@ class OpenClawWorker:
         if len(data) > max_bytes:
             raise RuntimeError(f"export too large ({len(data)} bytes)")
         return data
+
+    def screenshot(self, start_cmd: str, port: int = 3000) -> bytes | None:
+        """Start the built app inside the sandbox and photograph it locally. Nothing is exposed."""
+        start = f"PORT={port} nohup bash -lc {shlex.quote(start_cmd)} >/tmp/app.log 2>&1 &"
+        self.run(start, timeout=60)
+        wait = (
+            f"for i in $(seq 60); do (echo >/dev/tcp/127.0.0.1/{port}) 2>/dev/null && exit 0; sleep 0.5; done; exit 1"
+        )
+        if self._exec(["bash", "-c", wait])[0] != 0:
+            return None
+        rc, _, _ = self._exec(["runuser", "-u", WORKER_USER, "--", "bash", "-c", "cat > /tmp/shot.py"], _SHOT)
+        rc, _ = self.run(f"python3 /tmp/shot.py http://127.0.0.1:{port}/ /tmp/shot.png", timeout=120)
+        if rc != 0:
+            return None
+        rc, out, _ = self._exec(["bash", "-c", "base64 -w0 /tmp/shot.png"])
+        return base64.b64decode(out) if rc == 0 and out else None
 
     def run(self, cmd: str, timeout: int = 600) -> tuple[int, str]:
         """Run a shell command as the worker user inside the project folder."""
