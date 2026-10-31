@@ -44,7 +44,7 @@
           <li><b>Weigh.</b> Weighted value = Σ weight × score ÷ 10.</li>
           <li><b>Veto.</b> Hard-rule breaks, or a score under a veto line, drop to 0%.</li>
           <li><b>Probabilities.</b> Values become percentages (softmax).</li>
-          <li><b>Model's own view.</b> With open weights we also read the model's probability for each option letter.</li>
+          <li><b>Model's own view.</b> With open weights we also read the model's token probability for each option letter, where it writes its answer after reasoning.</li>
           <li><b>Blend and answer.</b> <span id="blend-text">70% principles + 30% model</span>; the top option goes back to the builder. Close calls are flagged.</li>
         </ol>
       </section>

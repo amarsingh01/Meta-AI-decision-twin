@@ -114,7 +114,7 @@ class OpenClawWorker:
         """The built project as a .tar.gz (no dependencies, git history or agent state)."""
         script = (
             f"cd {SITE_DIR} && tar --exclude=node_modules --exclude=.git --exclude=.venv --exclude=__pycache__ "
-            "--exclude=.openclaw -czf - . | base64 -w0"
+            "--exclude=.openclaw --exclude=.next --exclude=dist --exclude=build -czf - . | base64 -w0"
         )
         rc, out, err = self._exec(["bash", "-c", script], timeout=300)
         if rc != 0:

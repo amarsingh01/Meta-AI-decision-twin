@@ -85,7 +85,7 @@ function decisionCard(ev) {
     principles.map((p) => el("th", { title: p.description || "" }, p.name.split(" ")[0], el("small", {}, pct(p.weight)))),
     el("th", { title: "Σ weight × score ÷ 10" }, "Weighted", el("small", {}, "0–1")),
     el("th", { title: "Softmax of the weighted values, vetoed options at 0%" }, "Principles", el("small", {}, "probability")),
-    hasModel ? el("th", { title: "The open-weight model's own probability for this option letter" }, "Model", el("small", {}, "probability")) : null,
+    hasModel ? el("th", { title: "Glimmer's own token probability for this option letter, read where it writes its answer after reasoning. Usually decisive." }, "Model", el("small", {}, "after reasoning")) : null,
     el("th", { class: "final-col" }, "Final", el("small", {}, "confidence")));
   const rows = d.options.map((o) => {
     const fill = el("div", { class: "fill" });

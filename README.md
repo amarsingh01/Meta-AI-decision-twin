@@ -76,6 +76,9 @@ For each question from the builder, with options `A…D`:
 - **Untrusted text stays data.** Everything the builder writes is cleaned and placed between data
   fences; the twin is told never to follow instructions inside them. Builder replies are parsed
   only through strict, validated blocks.
+- **The result is inspected in place.** The finished site is started inside the sandbox and
+  photographed there with a headless browser; nothing the builder made is exposed to the internet.
+  Its source is saved and can be opened in the UI under a sandbox Content-Security-Policy.
 - **Tests are run independently.** When the builder says it is finished, the loop runs the tests
   itself, and the twin decides whether to accept.
 - **Web UI.** Strict Content-Security-Policy, no inline scripts, DOM built with `textContent`,
