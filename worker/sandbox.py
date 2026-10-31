@@ -12,6 +12,7 @@ Must be used from code already running inside Modal (the orchestrator function).
 
 from __future__ import annotations
 
+import base64
 import json
 import shlex
 import uuid
@@ -25,6 +26,7 @@ SITE_DIR = "/work/site"
 GATEWAY_DIR = "/root/.gateway"
 WORKER_USER = "worker"
 WORKER_MODEL = "muse-spark-1.3"
+SANDBOX_REGION = "us-east"
 
 _HERE = Path(__file__).resolve().parent
 
@@ -93,6 +95,20 @@ class OpenClawWorker:
         if rc != 0:
             raise RuntimeError(f"could not write {path}: {err[-300:]}")
 
+    def export_archive(self, max_bytes: int = 20 * 1024 * 1024) -> bytes:
+        """The built project as a .tar.gz (no dependencies, git history or agent state)."""
+        script = (
+            f"cd {SITE_DIR} && tar --exclude=node_modules --exclude=.git --exclude=.venv --exclude=__pycache__ "
+            "--exclude=.openclaw -czf - . | base64 -w0"
+        )
+        rc, out, err = self._exec(["bash", "-c", script], timeout=300)
+        if rc != 0:
+            raise RuntimeError(f"export failed: {err[-300:]}")
+        data = base64.b64decode(out)
+        if len(data) > max_bytes:
+            raise RuntimeError(f"export too large ({len(data)} bytes)")
+        return data
+
     def run(self, cmd: str, timeout: int = 600) -> tuple[int, str]:
         """Run a shell command as the worker user inside the project folder."""
         rc, out, err = self._exec(_as_worker(cmd), timeout=timeout)
@@ -103,7 +119,14 @@ class OpenClawWorker:
     def start(self, rules: str) -> None:
         ports = [self._preview_port] if self._preview_port else []
         self.sb = modal.Sandbox.create(
-            app=self._app, image=worker_image, timeout=self._lifetime, cpu=2.0, memory=4096, encrypted_ports=ports
+            app=self._app,
+            image=worker_image,
+            timeout=self._lifetime,
+            cpu=2.0,
+            memory=4096,
+            encrypted_ports=ports,
+            # Meta's API answers 404 model_not_found from some regions; keep the builder in the US.
+            region=SANDBOX_REGION,
         )
 
         # 1. Root-only model gateway holding the real key.

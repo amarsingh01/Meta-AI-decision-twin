@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import io
+import mimetypes
 import re
 import secrets
+import tarfile
 import time
 import uuid
 from collections.abc import Callable, MutableMapping
@@ -11,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from orchestrator.events import read_events
@@ -20,6 +23,15 @@ from twin.profile import load_decisions, load_profile
 RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 STATIC = frozenset({"app.js", "style.css"})
 RUN_TTL_S = 4 * 3600
+
+# Generated sites run in a sandbox: opaque origin, no access to this app, no outside requests.
+BUILT_CSP = (
+    "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
+    "frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+)
+BUILT_TYPES = {".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".ico", ".txt", ".md", ".csv"}
+SAFE_PATH = re.compile(r"^[A-Za-z0-9_./-]{1,200}$")
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -47,6 +59,7 @@ def create_api(
     access_token: str,
     web_dir: Path,
     launch: Callable[[str, str, str], None],
+    read_build: Callable[[str], bytes | None] = lambda run_id: None,
 ) -> FastAPI:
     if len(access_token) < 16:
         raise ValueError("access token is too short")
@@ -55,7 +68,7 @@ def create_api(
     @api.middleware("http")
     async def security_headers(request: Request, call_next):
         resp = await call_next(request)
-        resp.headers["Content-Security-Policy"] = CSP
+        resp.headers["Content-Security-Policy"] = BUILT_CSP if request.url.path.startswith("/built/") else CSP
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "no-referrer"
@@ -93,6 +106,42 @@ def create_api(
         if not RUN_ID.match(run_id) or not 0 <= since < 100_000:
             raise HTTPException(400, "bad request")
         return JSONResponse(read_events(store, run_id, since=since))
+
+    def _build_file(run_id: str, path: str) -> tuple[bytes, str] | None:
+        if not RUN_ID.match(run_id) or not SAFE_PATH.match(path) or ".." in path.split("/"):
+            return None
+        ext = Path(path).suffix.lower()
+        if ext not in BUILT_TYPES:
+            return None
+        data = read_build(run_id)
+        if not data:
+            return None
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+            for name in (f"./{path}", path):
+                try:
+                    member = tar.getmember(name)
+                except KeyError:
+                    continue
+                if member.isfile() and member.size < 5 * 1024 * 1024:
+                    f = tar.extractfile(member)
+                    if f:
+                        return f.read(), mimetypes.guess_type(path)[0] or "text/plain"
+        return None
+
+    @api.get("/built/{run_id}/{path:path}")
+    def built(run_id: str, path: str = ""):
+        found = _build_file(run_id, path or "index.html") or _build_file(run_id, f"{path.rstrip('/')}/index.html")
+        if not found:
+            raise HTTPException(404)
+        return Response(content=found[0], media_type=found[1])
+
+    @api.get("/api/runs/{run_id}/build.tar.gz")
+    def build_archive(run_id: str):
+        data = read_build(run_id) if RUN_ID.match(run_id) else None
+        if not data:
+            raise HTTPException(404)
+        headers = {"Content-Disposition": f'attachment; filename="{run_id}-site.tar.gz"'}
+        return Response(content=data, media_type="application/gzip", headers=headers)
 
     @api.post("/api/runs")
     def start(body: StartRun, x_access_token: str = Header(default="")):

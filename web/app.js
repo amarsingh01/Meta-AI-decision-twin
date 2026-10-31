@@ -146,6 +146,17 @@ function simpleCard(ev, cls, label) {
     el("div", {}, ev.message || ""), ev.summary ? el("div", { class: "ctx" }, ev.summary) : null);
 }
 
+function buildCard(ev) {
+  const id = encodeURIComponent(state.runId);
+  return el("li", { class: "card verify pass" },
+    el("div", { class: "head" }, el("span", { class: "pill good" }, "What the builder made"), el("span", { class: "when" }, time(ev.ts))),
+    el("div", { class: "links" },
+      el("a", { href: `/built/${id}/`, target: "_blank", rel: "noopener noreferrer" }, "Open the site it built ↗"),
+      el("a", { href: `/api/runs/${id}/build.tar.gz` }, "Download the source")),
+    el("p", { class: "hint" }, "Opens in an isolated sandbox: the generated code cannot reach this dashboard or the internet."),
+    el("details", {}, el("summary", {}, `${ev.files.length} files`), el("pre", {}, ev.files.join("\n"))));
+}
+
 function finishedCard(ev) {
   return el("li", { class: `card ${ev.finished ? "verify pass" : "error"}` },
     el("div", { class: "head" }, el("span", { class: `pill ${ev.finished ? "good" : "bad"}` }, ev.finished ? "Build accepted" : `Stopped: ${ev.outcome}`),
@@ -186,7 +197,7 @@ function applyEvent(ev) {
     case "worker_turn": meta.usage = ev.usage; tl.append(workerCard(ev)); break;
     case "decision": meta.decisions += 1; tl.append(decisionCard(ev)); break;
     case "verification": tl.append(verifyCard(ev)); break;
-    case "note": tl.append(simpleCard(ev, "note", "Note")); break;
+    case "note": tl.append(ev.files ? buildCard(ev) : simpleCard(ev, "note", "Note")); break;
     case "error": tl.append(simpleCard(ev, "error", "Problem")); break;
     case "run_finished": meta.finished = true; meta.usage = ev.usage || meta.usage; tl.append(finishedCard(ev)); break;
   }
