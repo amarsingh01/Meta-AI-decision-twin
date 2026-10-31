@@ -60,11 +60,12 @@ class OpenAICompatBrain:
     def letter_probs(self, messages: Sequence[Message], letters: Sequence[str]) -> dict[str, float] | None:
         if not self.supports_logprobs:
             return None
+        # Reasoning models think first, then answer. We let it think and read the probability
+        # distribution at the position where it writes the option letter.
         resp = self._client.chat.completions.create(
             model=self.model,
             messages=list(messages),
-            max_tokens=1,
-            temperature=0,
+            max_tokens=2000,
             logprobs=True,
             top_logprobs=20,
             **self.probe_extra,
@@ -72,7 +73,11 @@ class OpenAICompatBrain:
         lp = resp.choices[0].logprobs
         if lp is None or not lp.content:
             return None
-        return letters_from_top_logprobs([(t.token, t.logprob) for t in lp.content[0].top_logprobs], letters)
+        wanted = {x.upper() for x in letters}
+        for tok in reversed(lp.content):
+            if tok.token.strip().rstrip(".):").upper() in wanted:
+                return letters_from_top_logprobs([(t.token, t.logprob) for t in tok.top_logprobs], letters)
+        return None
 
 
 def letters_from_top_logprobs(top: Sequence[tuple[str, float]], letters: Sequence[str]) -> dict[str, float] | None:
@@ -104,9 +109,10 @@ def glimmer_from_env() -> OpenAICompatBrain:
     """Muse Glimmer (open weights) served by our own vLLM endpoint on Modal."""
     return OpenAICompatBrain(
         name="Meta Muse Glimmer 30B (open weights, self-hosted)",
-        model=os.environ.get("GLIMMER_MODEL", "glimmer"),
+        model=os.environ.get("GLIMMER_MODEL", "muse-glimmer"),
         base_url=os.environ["GLIMMER_BASE_URL"],
         api_key=os.environ["GLIMMER_API_KEY"],
         supports_logprobs=True,
-        timeout_s=600.0,  # first request may wait for a cold start
+        timeout_s=900.0,  # first request may wait for a cold start (about 3 minutes)
+        probe_extra={"extra_body": {"chat_template_kwargs": {"reasoning_strength": "low"}}},
     )

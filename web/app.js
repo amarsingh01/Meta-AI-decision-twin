@@ -53,6 +53,26 @@ function renderPrinciples(principles, hardRules, settings) {
   }
 }
 
+// ------------------------------------------------------------------ evaluation
+
+function renderEval(data) {
+  const box = $("eval");
+  const rows = Object.entries(data || {}).filter(([, v]) => v && v.n);
+  if (!rows.length) { box.replaceChildren(el("p", { class: "hint" }, "Not evaluated yet.")); return; }
+  box.replaceChildren(...rows.map(([key, v]) => {
+    const fill = el("span");
+    fill.style.width = `${(v.agreement || 0) * 100}%`;
+    return el("div", { class: "eval-row" },
+      el("div", { class: "row" }, el("span", {}, key === "glimmer" ? "Muse Glimmer (open)" : "Muse Spark (API)"),
+        el("b", {}, `${Math.round((v.agreement || 0) * v.n)}/${v.n} · ${pct(v.agreement)}`)),
+      el("div", { class: "bar" }, fill),
+      el("div", { class: "desc" },
+        `Average confidence in the recorded choice: ${pct(v.mean_p_truth)}` +
+        (v.mean_model_p_truth != null ? ` · model's own: ${pct(v.mean_model_p_truth)}` : "") +
+        (v.flagged_for_human ? ` · ${v.flagged_for_human} flagged as close calls` : "")));
+  }));
+}
+
 // ------------------------------------------------------------------ cards
 
 function scoreClass(s) { return s >= 7 ? "s-hi" : s >= 4 ? "s-mid" : "s-lo"; }
@@ -209,6 +229,7 @@ async function init() {
     const { profile } = await getJSON("/api/profile");
     renderPrinciples(profile.principles, profile.hard_rules, profile.decision_settings);
   } catch (e) { /* the run_started event carries the same data */ }
+  getJSON("/api/eval").then(renderEval).catch(() => renderEval(null));
   $("run-select").addEventListener("change", (e) => openRun(e.target.value));
   $("task").value = "Build me a small website that shows near-real-time data and news for an NSE-listed stock and gives an explained Buy / Hold / Sell signal. Budget is close to zero. It is a demo: it must never place trades and must not present itself as financial advice.";
   $("start-form").addEventListener("submit", async (e) => {

@@ -40,7 +40,9 @@ def _make_brain(name: str):
     return glimmer_from_env() if name == "glimmer" else spark_from_env()
 
 
-@app.function(image=image, secrets=[modal.Secret.from_name("meta-api")], timeout=4 * 3600)
+@app.function(
+    image=image, secrets=[modal.Secret.from_name("meta-api"), modal.Secret.from_name("glimmer")], timeout=4 * 3600
+)
 def build_job(run_id: str, task: str, brain: str = "spark") -> dict:
     from orchestrator.events import EventLog
     from orchestrator.loop import run_build
@@ -80,6 +82,26 @@ def _set_index(run_id: str, **fields) -> None:
     from webapi import set_index
 
     set_index(runs, run_id, **fields)
+
+
+@app.function(
+    image=image, secrets=[modal.Secret.from_name("meta-api"), modal.Secret.from_name("glimmer")], timeout=3600
+)
+def run_eval(brain: str) -> dict:
+    """Agreement on held-out decisions; stored for the UI.  modal run app.py::evaluate --brain glimmer"""
+    from twin.evaluation import evaluate as _evaluate
+
+    result = _evaluate(_make_brain(brain))
+    runs[f"eval:{brain}"] = result
+    return result
+
+
+@app.local_entrypoint()
+def evaluate(brain: str = "glimmer"):
+    r = run_eval.remote(brain)
+    print({k: v for k, v in r.items() if k != "rows"})
+    for row in r["rows"]:
+        print(row)
 
 
 @app.local_entrypoint()

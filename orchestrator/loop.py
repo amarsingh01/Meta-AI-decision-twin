@@ -118,7 +118,14 @@ def run_build(task: str, worker: Worker, twin: Twin, log: EventLog, limits: Limi
                     break
                 message = f"The tests do not pass (exit code {rc}). Output:\n{out[-2500:]}\nFix it, then DONE again."
                 continue
-            review = twin.decide(_acceptance_question(parsed.done, out, turn))
+            try:
+                review = twin.decide(_acceptance_question(parsed.done, out, turn))
+            except ScoringError as exc:
+                log.emit(
+                    "error", turn=turn, message=f"Twin could not review the build: {exc}; accepting on green tests"
+                )
+                finished, outcome = True, "accepted_on_tests"
+                break
             decisions += 1
             log.emit("decision", turn=turn, decision=_decision_event(review))
             if review.chosen == "A" or fix_rounds >= limits.max_fix_rounds:

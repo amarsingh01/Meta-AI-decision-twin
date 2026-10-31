@@ -132,7 +132,11 @@ class DecisionTwin:
         expected = {o.id for o in q.options}
         last_error = ""
         for _attempt in range(2):
-            reply = self.brain.chat(messages)
+            try:
+                reply = self.brain.chat(messages, max_tokens=16000)
+            except Exception as exc:  # network, rate limit or an empty reasoning-only reply
+                last_error = f"{type(exc).__name__}: {str(exc)[:200]}"
+                continue
             try:
                 parsed = ModelScoring.model_validate(_extract_json(reply))
                 got = {o.id for o in parsed.options}

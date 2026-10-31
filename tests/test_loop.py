@@ -97,3 +97,9 @@ def test_events_paging():
         log.emit("note", i=i)
     assert [e["i"] for e in read_events(store, "r", since=3)] == [3, 4]
     assert EventLog(store, "r").emit("note")["seq"] == 5
+
+
+def test_review_failure_does_not_crash_the_run():
+    worker = FakeWorker([DONE])
+    out = run_build("x", worker, DecisionTwin(Brain(["junk", "junk"])), EventLog({}, "r4"))
+    assert out["finished"] and out["outcome"] == "accepted_on_tests"

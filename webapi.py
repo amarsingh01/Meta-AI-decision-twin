@@ -78,6 +78,10 @@ def create_api(
     def profile():
         return {"profile": load_profile().model_dump(), "decisions": [d.model_dump() for d in load_decisions()]}
 
+    @api.get("/api/eval")
+    def evaluation():
+        return {b: store.get(f"eval:{b}") for b in ("glimmer", "spark")}
+
     @api.get("/api/runs")
     def list_runs():
         index = store.get("index", {})

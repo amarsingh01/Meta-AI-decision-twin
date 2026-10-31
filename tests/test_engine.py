@@ -149,3 +149,45 @@ def test_letters_from_logprobs():
 def test_examples_exclude_holdout():
     twin = DecisionTwin(FakeBrain([]))
     assert all(e.split == "train" for e in twin._examples)
+
+
+def test_brain_failure_is_retried_then_reported():
+    class Flaky(FakeBrain):
+        def chat(self, messages, max_tokens=4000):
+            self.sent.append(messages)
+            if len(self.sent) == 1:
+                raise RuntimeError("empty reply (finish_reason=length)")
+            return self._replies.pop(0)
+
+    good = _reply(A=(5, False), B=(8, False), C=(4, False))
+    assert DecisionTwin(Flaky([good])).decide(QUESTION).chosen == "B"
+
+    class Dead(FakeBrain):
+        def chat(self, messages, max_tokens=4000):
+            raise RuntimeError("down")
+
+    with pytest.raises(ScoringError):
+        DecisionTwin(Dead([])).decide(QUESTION)
+
+
+def test_letter_probs_reads_position_after_reasoning():
+    import math
+    from types import SimpleNamespace as NS
+
+    from twin.brain import OpenAICompatBrain
+
+    def tok(t, top):
+        return NS(token=t, logprob=0.0, top_logprobs=[NS(token=k, logprob=math.log(v)) for k, v in top])
+
+    content = [
+        tok("thinking", [("x", 1.0)]),
+        tok("A", [("A", 0.9), ("x", 0.1)]),
+        tok("<|message|>", [("y", 1)]),
+        tok("B", [("B", 0.7), ("A", 0.2), ("C", 0.1)]),
+        tok("<|eot|>", [("z", 1)]),
+    ]
+    resp = NS(choices=[NS(logprobs=NS(content=content))])
+    brain = OpenAICompatBrain(name="g", model="m", base_url="http://x", api_key="k", supports_logprobs=True)
+    brain._client = NS(chat=NS(completions=NS(create=lambda **kw: resp)))
+    p = brain.letter_probs([{"role": "user", "content": "q"}], ["A", "B", "C"])
+    assert p == pytest.approx({"A": 0.2, "B": 0.7, "C": 0.1})

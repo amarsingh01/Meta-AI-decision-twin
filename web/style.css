@@ -42,6 +42,10 @@ a { color: var(--twin); }
 .bar { height: 7px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 4px; }
 .bar > span { display: block; height: 100%; background: var(--twin); }
 .veto-tag { font-size: 11px; color: var(--bad); margin-left: 6px; }
+.eval-row + .eval-row { margin-top: 12px; }
+.eval-row .row { display: flex; justify-content: space-between; font-size: 14px; }
+.eval-row .bar > span { background: var(--good); }
+.eval-row .desc { font-size: 12px; color: var(--muted); margin-top: 3px; }
 .rules { margin: 0; padding-left: 18px; font-size: 13px; }
 .rules li + li { margin-top: 4px; }
 .steps { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
