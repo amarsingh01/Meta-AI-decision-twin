@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Decision Twin · principles that direct an AI builder</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Decision Twin</h1>
+      <p class="tag">A model that decides like its owner, directing a separate AI builder turn by turn.</p>
+    </div>
+    <div class="actors" id="actors">
+      <div class="actor twin"><span class="role">Decides</span><strong id="twin-brain">Decision twin</strong></div>
+      <div class="arrow" aria-hidden="true">⇄</div>
+      <div class="actor worker"><span class="role">Builds</span><strong id="worker-brain">OpenClaw agent</strong></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="side">
+      <section class="panel">
+        <h2>Principles <span class="pill warn" title="Invented for this demo">synthetic</span></h2>
+        <p class="hint">Each option the builder raises is scored 0–10 on every principle. The weights set how much each score counts.</p>
+        <ol id="principles" class="principles"></ol>
+        <h3>Hard rules</h3>
+        <p class="hint">Breaking one vetoes an option, whatever it scores.</p>
+        <ul id="hard-rules" class="rules"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>How a choice is made</h2>
+        <ol class="steps">
+          <li><b>Score.</b> The twin model rates each option 0–10 per principle.</li>
+          <li><b>Weigh.</b> Weighted value = Σ weight × score ÷ 10.</li>
+          <li><b>Veto.</b> Hard-rule breaks, or a score under a veto line, drop to 0%.</li>
+          <li><b>Probabilities.</b> Values become percentages (softmax).</li>
+          <li><b>Model's own view.</b> With open weights we also read the model's probability for each option letter.</li>
+          <li><b>Blend and answer.</b> <span id="blend-text">70% principles + 30% model</span>; the top option goes back to the builder. Close calls are flagged.</li>
+        </ol>
+      </section>
+
+      <section class="panel">
+        <h2>Runs</h2>
+        <select id="run-select" aria-label="Choose a run"></select>
+        <details class="start">
+          <summary>Start a new build</summary>
+          <form id="start-form">
+            <label>Task for the twin<textarea id="task" rows="5" maxlength="1500" required></textarea></label>
+            <label>Twin brain
+              <select id="brain">
+                <option value="glimmer">Muse Glimmer 30B · open weights, self-hosted</option>
+                <option value="spark">Muse Spark 1.3 · Meta API</option>
+              </select>
+            </label>
+            <label>Access token<input id="token" type="password" autocomplete="off" required></label>
+            <button type="submit">Start build</button>
+            <p id="start-msg" class="hint" role="status"></p>
+          </form>
+        </details>
+      </section>
+    </aside>
+
+    <section class="main">
+      <div class="notice" role="note">
+        Demo only. The website being built never places trades and is not financial advice.
+        The principles and past decisions are invented and labelled as such.
+      </div>
+      <div class="status" id="status" aria-live="polite">Loading…</div>
+      <div class="stats" id="stats"></div>
+      <div id="task-box" class="task-box hidden"></div>
+      <ol id="timeline" class="timeline"></ol>
+    </section>
+  </main>
+
+  <footer class="foot">
+    Built for the Meta Global AI Developer Hackathon · Meta Muse Glimmer + Muse Spark · OpenClaw ·
+    <a href="https://github.com/amarsingh01/Meta-AI-decision-twin" rel="noopener noreferrer">source</a>
+  </footer>
+</body>
+</html>
