@@ -190,6 +190,15 @@ class OpenClawWorker:
         rc, out, _ = self._exec(["bash", "-c", "base64 -w0 /tmp/shot.png"])
         return base64.b64decode(out) if rc == 0 and out else None
 
+    def static_site_dir(self) -> str | None:
+        """The folder holding a plain static site (index.html), if the build is one."""
+        script = (
+            f"cd {SITE_DIR} && for d in dist build public out .; do "
+            '[ -f "$d/index.html" ] && { echo "$d"; exit 0; }; done; exit 1'
+        )
+        rc, out, _ = self._exec(["bash", "-c", script])
+        return out.strip() or None if rc == 0 else None
+
     def run(self, cmd: str, timeout: int = 600) -> tuple[int, str]:
         """Run a shell command as the worker user inside the project folder."""
         rc, out, err = self._exec(_as_worker(cmd), timeout=timeout)

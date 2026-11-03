@@ -133,8 +133,15 @@ def _save_build(run_id: str, worker, log, start_cmd: str | None = None) -> None:
             shot = worker.screenshot(start_cmd)
         except Exception as exc:
             log.emit("note", message=f"Could not photograph the built site: {exc}")
-        if shot:
-            (out / "screenshot.png").write_bytes(shot)
+    if not shot:
+        static = worker.static_site_dir()
+        if static:
+            try:
+                shot = worker.screenshot(f"python3 -m http.server 3999 --directory {static}", port=3999)
+            except Exception as exc:
+                log.emit("note", message=f"Could not photograph the static site: {exc}")
+    if shot:
+        (out / "screenshot.png").write_bytes(shot)
     builds.commit()
     log.emit("note", message=f"Saved the built project ({len(files)} files)", files=files[:200], screenshot=bool(shot))
 

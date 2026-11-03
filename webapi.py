@@ -180,7 +180,9 @@ def create_api(
         found = (
             _build_file(run_id, path or "index.html")
             or _build_file(run_id, f"{path.rstrip('/')}/index.html".lstrip("/"))
-            or (None if path else _build_file(run_id, "public/index.html"))
+            or (None if path else next(
+                (f for d in ("dist", "build", "public", "out") if (f := _build_file(run_id, f"{d}/index.html"))), None
+            ))
         )
         if not found:
             raise HTTPException(404)
