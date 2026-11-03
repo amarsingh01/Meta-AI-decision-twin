@@ -78,6 +78,66 @@ def _take(store: MutableMapping[str, Any], key: str, limit: int) -> bool:
     return True
 
 
+def summarise_run(store: MutableMapping[str, Any], run_id: str) -> dict:
+    """What one build produced, for the side-by-side comparison."""
+    events = read_events(store, run_id, limit=2000)
+    out: dict[str, Any] = {
+        "run_id": run_id,
+        "decisions": [],
+        "checked": 0,
+        "stopped": [],
+        "model_reviews": 0,
+        "tests": None,
+        "finished": None,
+        "outcome": None,
+        "files": [],
+        "screenshot": False,
+        "deployed": False,
+        "tokens": 0,
+        "started": None,
+        "ended": None,
+        "persona": None,
+    }
+    for ev in events:
+        t = ev.get("type")
+        out["ended"] = ev.get("ts")
+        if t == "run_started":
+            out["started"], out["persona"] = ev.get("ts"), ev.get("persona")
+        elif t == "decision":
+            d = ev["decision"]
+            chosen = next((o for o in d["options"] if o["id"] == d.get("chosen")), None)
+            if d["question"].startswith("The worker says the build is finished"):
+                continue
+            out["decisions"].append(
+                {
+                    "question": d["question"],
+                    "chosen": chosen["label"] if chosen else None,
+                    "confidence": d.get("confidence"),
+                    "top": sorted(
+                        ({"id": k, "score": v} for k, v in (chosen or {}).get("scores", {}).items()),
+                        key=lambda x: -x["score"],
+                    )[:3],
+                }
+            )
+        elif t == "guardian":
+            out["checked"] += 1
+            out["model_reviews"] += ev.get("layer") == "model"
+            if ev.get("decision") != "allow":
+                out["stopped"].append({k: ev.get(k) for k in ("decision", "action", "reason", "layer", "redteam")})
+        elif t == "verification":
+            out["tests"] = bool(ev.get("passed"))
+        elif t == "run_finished":
+            out["finished"], out["outcome"] = ev.get("finished"), ev.get("outcome")
+            out["tokens"] = (ev.get("usage") or {}).get("prompt_tokens", 0) + (ev.get("usage") or {}).get(
+                "completion_tokens", 0
+            )
+        elif t == "note" and ev.get("receipt"):
+            out["deployed"] = True
+        elif t == "note" and "files" in ev:
+            out["files"], out["screenshot"] = ev["files"], bool(ev.get("screenshot"))
+    return out
+
+
 class StartRun(BaseModel):
     task: str = Field(min_length=10, max_length=1500)
     brain: str = Field(pattern="^(spark|glimmer)$")
@@ -131,7 +191,18 @@ def create_api(
     @api.get("/api/guardian")
     def guardian_info():
         profile = json.loads(GUARDIAN_PROFILE_FILE.read_text()) if GUARDIAN_PROFILE_FILE.exists() else None
-        return {"profile": profile, "scorecard": store.get("guardian:scorecard"), "ask_enabled": ask is not None}
+        cards = {"llama": store.get("guardian:scorecard:llama"), "spark": store.get("guardian:scorecard")}
+        return {"profile": profile, "scorecards": cards, "ask_enabled": ask is not None}
+
+    @api.get("/api/compare")
+    def compare():
+        entry = store.get("compare")
+        if not entry:
+            return {"task": None, "runs": []}
+        return {
+            "task": entry["task"],
+            "runs": [{**r, "key": r["persona"], **summarise_run(store, r["run_id"])} for r in entry["runs"]],
+        }
 
     @api.post("/api/guardian/ask")
     def guardian_ask(body: AskGuardian, request: Request):

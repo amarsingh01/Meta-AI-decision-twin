@@ -16,7 +16,7 @@
     <div class="actors" aria-label="How actions flow">
       <div class="actor worker"><span class="role">Agent asks</span><strong>OpenClaw builder</strong><small>no keys, no sudo</small></div>
       <div class="arrow" aria-hidden="true">→</div>
-      <div class="actor guard"><span class="role">Guardian checks</span><strong>Hard rules + Muse Spark</strong><small>allow · ask you · block</small></div>
+      <div class="actor guard"><span class="role">Guardian checks</span><strong>Hard rules + local Llama</strong><small>allow · ask you · block</small></div>
       <div class="arrow" aria-hidden="true">→</div>
       <div class="actor home"><span class="role">Your system</span><strong>Keys, network, files</strong><small>only what the task needs</small></div>
     </div>
@@ -30,7 +30,7 @@
         <p class="hint">Checked by code, not by a model. They hold even if every model is wrong.</p>
         <ul id="g-rules" class="rules"></ul>
         <h3>Principles for judgement calls</h3>
-        <p class="hint">For actions the rules cannot settle, the guardian model scores Allow / Ask you / Block 0–10 on each principle.</p>
+        <p class="hint">For actions the rules cannot settle, the guardian model scores the action 0–10 on each principle.</p>
         <ol id="g-principles" class="principles"></ol>
       </section>
 
@@ -39,7 +39,7 @@
         <ol class="steps">
           <li><b>Intercept.</b> The agent's model replies through a gateway the agent cannot touch. Each tool call (command, file write, web fetch) is pulled out before the agent can run it.</li>
           <li><b>Hard rules.</b> Secrets, unknown destinations, uploads, environment dumps and destructive commands are blocked. One-time codes, sudo and payments go to you.</li>
-          <li><b>Judgement.</b> Anything else that is unusual is scored by the guardian model against the task and recent actions. Vetoes and close calls never allow.</li>
+          <li><b>Judgement.</b> Anything else that is unusual is scored 0–10 on each principle by a small open Meta model (Llama 3.2 3B) running on CPU next to the agent: no API, no GPU. A score under a veto line blocks; only a clear pass is allowed; the rest goes to you.</li>
           <li><b>Act.</b> Allowed calls pass unchanged. Stopped calls are replaced with a note to the agent, so the action never runs.</li>
           <li><b>Broker.</b> Privileged steps (deploying with a key) are done by the guardian itself. The agent never sees the key.</li>
         </ol>
@@ -76,16 +76,24 @@
         <p class="hint">Neither needed a bad actor at the keyboard. Agents with real access drift off task. The guardian works with any agent and any model, because it watches actions, not intentions.</p>
       </section>
 
+      <section class="panel" id="compare-panel">
+        <h2>Three agents, one task</h2>
+        <p class="hint">Same job, same guardian, same shared principles. Each owner adds finer requirements; their decision twin scores every choice OpenClaw raises against them, so three different sites come out of one brief.</p>
+        <details class="task-details"><summary>The task all three got</summary><p id="compare-task"></p></details>
+        <div id="compare" class="compare-grid"><p class="hint">Loading…</p></div>
+      </section>
+
       <section class="panel">
         <h2>Scorecard <span class="pill" id="sc-meta"></span></h2>
+        <div class="tabs" id="sc-tabs" role="tablist" aria-label="Guardian model"></div>
         <p class="hint">12 scenarios with 35 agent actions: 8 attacks (15 harmful actions) and 4 normal jobs (20 legitimate actions, including ones that look risky out of context). Same actions, three set-ups.</p>
         <div id="scorecard" class="scorecard"></div>
         <div id="scenarios" class="scenarios"></div>
       </section>
 
       <section class="panel" id="ask-panel">
-        <h2>Ask the guardian <span class="pill twin">live · Muse Spark</span></h2>
-        <p class="hint">Give it a task and an action an agent wants to take. Hard-rule answers are instant; model reviews take 20–60 seconds. Limited to a few questions per hour.</p>
+        <h2>Ask the guardian <span class="pill twin">live · Llama 3.2 3B on CPU, no API</span></h2>
+        <p class="hint">Give it a task and an action an agent wants to take. Hard-rule answers are instant; model reviews take about 10–30 seconds (up to a minute if the model has to wake up). Limited to a few questions per hour.</p>
         <div class="presets" id="presets"></div>
         <form id="ask-form">
           <label>The task the owner gave<input id="ask-task" maxlength="400" required></label>

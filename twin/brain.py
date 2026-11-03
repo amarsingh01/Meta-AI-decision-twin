@@ -53,23 +53,33 @@ class OpenAICompatBrain:
         extra = dict(self.chat_extra)
         if schema is not None and self.supports_json_schema:
             extra["response_format"] = {"type": "json_schema", "json_schema": {"name": "scores", "schema": schema}}
-        resp = self._client.chat.completions.create(
-            model=self.model,
-            messages=list(messages),
-            max_tokens=max_tokens,
-            **extra,
-        )
+        resp = self._create(model=self.model, messages=list(messages), max_tokens=max_tokens, **extra)
         content = resp.choices[0].message.content
         if not content:
             raise RuntimeError(f"{self.name}: empty reply (finish_reason={resp.choices[0].finish_reason})")
         return content
+
+    def _create(self, **kw):
+        """Meta's API sometimes answers 404 model_not_found for a moment; retry that, briefly."""
+        import time
+
+        from openai import NotFoundError
+
+        for attempt in range(4):
+            try:
+                return self._client.chat.completions.create(**kw)
+            except NotFoundError:
+                if attempt == 3:
+                    raise
+                time.sleep(2 + 3 * attempt)
+        raise RuntimeError("unreachable")
 
     def letter_probs(self, messages: Sequence[Message], letters: Sequence[str]) -> dict[str, float] | None:
         if not self.supports_logprobs:
             return None
         # Reasoning models think first, then answer. We let it think and read the probability
         # distribution at the position where it writes the option letter.
-        resp = self._client.chat.completions.create(
+        resp = self._create(
             model=self.model,
             messages=list(messages),
             max_tokens=2000,

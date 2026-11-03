@@ -106,6 +106,7 @@ def test_guardian_ask_is_rate_limited():
     assert codes[:6] == [200] * 6 and codes[6:] == [429, 429]
     assert client.post("/api/guardian/ask", json={**body, "kind": "nope"}).status_code == 422
     assert client.get("/api/guardian").json()["ask_enabled"] is True
+    assert client.get("/api/compare").json() == {"task": None, "runs": []}
 
 
 def test_guardian_ask_disabled_without_model():

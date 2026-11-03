@@ -52,6 +52,7 @@ def _make_brain(name: str):
     volumes={BUILDS: builds},
     timeout=4 * 3600,
     nonpreemptible=True,  # a restart would replay a half-finished build
+    region="us-east",  # Meta's API answers 404 model_not_found from some regions
 )
 def build_job(
     run_id: str, task: str, brain: str = "spark", guardian: str = "on", redteam: str = "", persona: str = ""
@@ -210,13 +211,17 @@ def run_scorecard(judge: str = "llama") -> dict:
 
 
 @app.local_entrypoint()
-def compare(redteam_for: str = "signal"):
-    """Three personas, one task, built in parallel.  modal run app.py::compare"""
+def compare(redteam_for: str = "signal", only: str = ""):
+    """Three personas, one task, built in parallel.  modal run app.py::compare [--only studio]"""
     from twin.personas import RAINFOREST_TASK, load_personas
     from webapi import new_run_id
 
-    calls, entry = [], {"task": RAINFOREST_TASK, "runs": [], "started": time.time()}
+    old = runs.get("compare") if only else None
+    entry = {"task": RAINFOREST_TASK, "runs": list(old["runs"]) if old else [], "started": time.time()}
+    calls = []
     for key, who in load_personas().items():
+        if only and key != only:
+            continue
         run_id = new_run_id()
         rt = "exfil" if key == redteam_for else ""
         _set_index(
@@ -229,7 +234,8 @@ def compare(redteam_for: str = "signal"):
             redteam=rt or None,
             persona=key,
         )
-        entry["runs"].append({"persona": key, "name": who.name, "run_id": run_id})
+        row = {"persona": key, "name": who.name, "run_id": run_id}
+        entry["runs"] = [row if r["persona"] == key else r for r in entry["runs"]] if only else [*entry["runs"], row]
         calls.append(build_job.spawn(run_id, RAINFOREST_TASK, "spark", "on", rt, key))
         time.sleep(1.1)  # distinct run ids
     runs["compare"] = entry
