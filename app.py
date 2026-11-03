@@ -23,7 +23,7 @@ BUILDS = "/builds"
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("pydantic==2.13.5", "openai==3.42.0", "fastapi[standard]==0.162.0")
-    .add_local_python_source("twin", "worker", "orchestrator", "webapi")
+    .add_local_python_source("twin", "worker", "orchestrator", "webapi", "guardian")
     .add_local_dir(ROOT / "profile", "/root/profile")
     .add_local_dir(ROOT / "web", "/root/web")
 )
@@ -48,9 +48,9 @@ def _make_brain(name: str):
     volumes={BUILDS: builds},
     timeout=4 * 3600,
 )
-def build_job(run_id: str, task: str, brain: str = "spark") -> dict:
+def build_job(run_id: str, task: str, brain: str = "spark", guardian: str = "on", redteam: str = "") -> dict:
     from orchestrator.events import EventLog
-    from orchestrator.loop import run_build
+    from orchestrator.loop import Limits, run_build
     from twin import DecisionTwin
     from twin.profile import load_profile
     from worker.protocol import WORKER_RULES
@@ -68,11 +68,22 @@ def build_job(run_id: str, task: str, brain: str = "spark") -> dict:
         hard_rules=list(profile.hard_rules),
         settings=profile.decision_settings.model_dump(),
         synthetic=profile.synthetic,
+        guardian=_guardian_summary(guardian, redteam),
     )
     worker = OpenClawWorker(app, os.environ["META_API_KEY"])
     try:
-        worker.start(WORKER_RULES)
-        summary = run_build(task, worker, DecisionTwin(twin_brain, profile), log)
+        worker.start(WORKER_RULES, task=task, guardian=guardian, redteam=redteam)
+        limits = Limits(max_turns=30, max_decisions=6) if guardian else Limits()
+        summary = run_build(task, worker, DecisionTwin(twin_brain, profile), log, limits)
+        for ev in worker.guardian_events():
+            log.emit("guardian", turn=None, **{k: v for k, v in ev.items() if k != "ts"}, at=ev.get("ts"))
+        receipt = worker.deploy_receipt()
+        if receipt:
+            log.emit(
+                "note",
+                message=f"Guardian deployed {receipt['files']} files; the agent never saw the key",
+                receipt=receipt,
+            )
         _save_build(run_id, worker, log, start_cmd=summary.get("run"))
         return summary
     except Exception as exc:  # surface any crash in the UI, then re-raise for Modal logs
@@ -83,6 +94,22 @@ def build_job(run_id: str, task: str, brain: str = "spark") -> dict:
     finally:
         _set_index(run_id, status="finished")
         worker.stop()
+
+
+def _guardian_summary(mode: str, redteam: str) -> dict | None:
+    if mode not in {"on", "off"}:
+        return None
+    from guardian.judge import GUARDIAN_PROFILE
+    from twin.profile import load_profile
+
+    gp = load_profile(GUARDIAN_PROFILE)
+    return {
+        "mode": mode,
+        "redteam": redteam or None,
+        "model": "Meta muse-spark-1.3 (guardian reviews)",
+        "principles": [p.model_dump() for p in gp.principles],
+        "hard_rules": list(gp.hard_rules),
+    }
 
 
 def _save_build(run_id: str, worker, log, start_cmd: str | None = None) -> None:
@@ -139,13 +166,13 @@ def evaluate(brain: str = "glimmer"):
 
 
 @app.local_entrypoint()
-def main(task: str = DEFAULT_TASK, brain: str = "spark"):
+def main(task: str = DEFAULT_TASK, brain: str = "spark", guardian: str = "", redteam: str = ""):
     from webapi import new_run_id
 
     run_id = new_run_id()
     _set_index(run_id, task=task[:200], brain=brain, status="running", started=time.time())
     print(f"run {run_id}")
-    print(build_job.remote(run_id, task, brain))
+    print(build_job.remote(run_id, task, brain, guardian or None, redteam))
 
 
 # --------------------------------------------------------------------------- web UI

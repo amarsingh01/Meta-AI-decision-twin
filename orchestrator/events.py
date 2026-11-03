@@ -15,6 +15,7 @@ EventType = Literal[
     "worker_turn",
     "decision",
     "verification",
+    "guardian",
     "note",
     "error",
     "run_finished",

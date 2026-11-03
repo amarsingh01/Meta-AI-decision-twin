@@ -114,7 +114,7 @@ def check_request(path: str, body: bytes) -> tuple[int, str] | None:
     return None
 
 
-def make_handler(key: str, budget: Budget) -> type[BaseHTTPRequestHandler]:
+def make_handler(key: str, budget: Budget, hook=None, broker=None) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -138,6 +138,14 @@ def make_handler(key: str, budget: Budget) -> type[BaseHTTPRequestHandler]:
                 self._error(413, "request too large")
                 return
             body = self.rfile.read(length)
+            if self.path == "/guardian/request" and broker is not None:
+                try:
+                    req_body = json.loads(body)
+                    answer = broker(str(req_body.get("resource", ""))[:200], str(req_body.get("reason", ""))[:600])
+                except (ValueError, AttributeError) as exc:
+                    answer = {"granted": False, "message": f"bad request: {exc}"}
+                self._reply(200, json.dumps(answer).encode())
+                return
             refusal = check_request(self.path, body)
             if refusal:
                 self._error(*refusal)
@@ -168,6 +176,13 @@ def make_handler(key: str, budget: Budget) -> type[BaseHTTPRequestHandler]:
                 time.sleep(2 * 2**attempt)  # 2s, 4s, 8s
             if status == 200:
                 budget.add(*usage_from_stream(data))
+                if hook is not None:
+                    try:
+                        data = hook.review(data)
+                    except Exception as exc:  # fail closed: if the guardian breaks, the agent gets no tool call
+                        sys.stderr.write(f"guardian hook error: {exc!r}\n")
+                        data = json.dumps({"error": {"message": "gateway: guardian unavailable"}}).encode()
+                        status, ctype = 503, "application/json"
             else:
                 budget.upstream_error(status, data, body)
             self._reply(status, data, ctype)
@@ -183,7 +198,17 @@ def main() -> None:
         key = f.read().strip()
     budget = Budget(TOKEN_BUDGET, USAGE_FILE)
     budget._save()
-    server = ThreadingHTTPServer(("127.0.0.1", 8080), make_handler(key, budget))
+    hook = broker = None
+    mode = os.environ.get("GATEWAY_GUARDIAN", "")
+    if mode in {"on", "off"}:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pkg"))
+        from broker import Broker
+        from guard_hook import GuardHook
+
+        state = os.path.dirname(USAGE_FILE)
+        hook = GuardHook(key, UPSTREAM, state, enabled=mode == "on", redteam=os.environ.get("GATEWAY_REDTEAM", ""))
+        broker = Broker(hook, state)
+    server = ThreadingHTTPServer(("127.0.0.1", 8080), make_handler(key, budget, hook, broker))
     server.serve_forever()
 
 

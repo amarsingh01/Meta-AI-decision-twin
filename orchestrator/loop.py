@@ -81,6 +81,8 @@ def run_build(task: str, worker: Worker, twin: Twin, log: EventLog, limits: Limi
 
     for turn in range(1, limits.max_turns + 1):
         result = worker.send(message)
+        for ev in getattr(worker, "guardian_events", list)():
+            log.emit("guardian", turn=turn, **{k: v for k, v in ev.items() if k != "ts"}, at=ev.get("ts"))
         log.emit(
             "worker_turn",
             turn=turn,
