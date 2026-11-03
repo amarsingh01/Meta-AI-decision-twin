@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import shlex
 import uuid
 from dataclasses import dataclass
@@ -160,7 +161,7 @@ class OpenClawWorker:
         """The built project as a .tar.gz (no dependencies, git history or agent state)."""
         script = (
             f"cd {SITE_DIR} && tar --exclude=node_modules --exclude=.git --exclude=.venv --exclude=__pycache__ "
-            "--exclude=.openclaw --exclude=.next --exclude=dist --exclude=build -czf - . | base64 -w0"
+            "--exclude=.openclaw --exclude=.next --exclude=.cache -czf - . | base64 -w0"
         )
         rc, out, err = self._exec(["bash", "-c", script], timeout=300)
         if rc != 0:
@@ -170,8 +171,11 @@ class OpenClawWorker:
             raise RuntimeError(f"export too large ({len(data)} bytes)")
         return data
 
-    def screenshot(self, start_cmd: str, port: int = 3000) -> bytes | None:
+    def screenshot(self, start_cmd: str, port: int | None = None) -> bytes | None:
         """Start the built app inside the sandbox and photograph it locally. Nothing is exposed."""
+        if port is None:
+            ports = re.findall(r"(?:--port[ =]|-p |:|\s)(\d{4,5})\b", start_cmd)
+            port = int(ports[-1]) if ports else 3000
         start = f"PORT={port} nohup bash -lc {shlex.quote(start_cmd)} >/tmp/app.log 2>&1 &"
         self.run(start, timeout=60)
         wait = (
