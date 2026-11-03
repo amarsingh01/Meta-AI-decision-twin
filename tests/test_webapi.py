@@ -113,3 +113,20 @@ def test_guardian_ask_disabled_without_model():
     client = TestClient(create_api({}, TOKEN, WEB, lambda *a: None))
     body = {"task": "Fix the header CSS", "kind": "exec", "detail": "ls"}
     assert client.post("/api/guardian/ask", json=body).status_code == 503
+
+
+def test_finished_runs_are_cached_and_summarised():
+    from orchestrator.events import EventLog
+    from webapi import summarise_run
+
+    store = {}
+    log = EventLog(store, "20261104-010001-440d09")
+    log.emit("run_started", task="t", persona={"name": "Studio"})
+    log.emit("guardian", decision="block", action="run: ls /tmp", reason="off task", layer="model", redteam=True)
+    log.emit("run_finished", finished=True, outcome="accepted", usage={"prompt_tokens": 5, "completion_tokens": 2})
+    log.emit("note", message="Saved", files=["dist/index.html"], screenshot=True)
+    s = summarise_run(store, "20261104-010001-440d09")
+    assert s["finished"] and s["stopped"][0]["redteam"] and s["tokens"] == 7 and s["screenshot"]
+    assert "20261104-010001-440d09:all" in store
+    client = TestClient(create_api(store, TOKEN, WEB, lambda *a: None))
+    assert len(client.get("/api/runs/20261104-010001-440d09/events").json()) == 4

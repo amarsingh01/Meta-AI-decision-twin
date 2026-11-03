@@ -78,9 +78,25 @@ def _take(store: MutableMapping[str, Any], key: str, limit: int) -> bool:
     return True
 
 
+def _is_complete(events: list[dict]) -> bool:
+    """A run is complete once its build was saved (the last thing a build job does)."""
+    return any(e.get("type") == "note" and "files" in e for e in events[-4:])
+
+
+def all_events(store: MutableMapping[str, Any], run_id: str) -> list[dict]:
+    """Every event of a run; finished runs are cached as one entry (one read instead of hundreds)."""
+    cached = store.get(f"{run_id}:all")
+    if cached is not None:
+        return cached
+    events = read_events(store, run_id, limit=5000)
+    if _is_complete(events):
+        store[f"{run_id}:all"] = events
+    return events
+
+
 def summarise_run(store: MutableMapping[str, Any], run_id: str) -> dict:
     """What one build produced, for the side-by-side comparison."""
-    events = read_events(store, run_id, limit=2000)
+    events = all_events(store, run_id)
     out: dict[str, Any] = {
         "run_id": run_id,
         "decisions": [],
@@ -225,6 +241,13 @@ def create_api(
     def events(run_id: str, since: int = 0):
         if not RUN_ID.match(run_id) or not 0 <= since < 100_000:
             raise HTTPException(400, "bad request")
+        cached = store.get(f"{run_id}:all")
+        if cached is None and since == 0:
+            n = int(store.get(f"{run_id}:n", 0))
+            tail = read_events(store, run_id, since=max(0, n - 4), limit=4)
+            cached = all_events(store, run_id) if _is_complete(tail) else None
+        if cached is not None:
+            return JSONResponse(cached[since : since + 500])
         return JSONResponse(read_events(store, run_id, since=since))
 
     def _build_file(run_id: str, path: str) -> tuple[bytes, str] | None:
