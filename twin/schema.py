@@ -109,7 +109,12 @@ class ModelOptionScore(BaseModel):
     scores: dict[str, float]
     violates_hard_rule: bool = False
     veto_reason: str | None = None
-    rationale: str = ""
+    rationale: str | None = ""
+
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def _text(cls, v: object) -> str:
+        return "" if v is None else str(v)
 
 
 class ModelScoring(BaseModel):

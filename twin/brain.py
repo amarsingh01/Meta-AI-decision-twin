@@ -24,7 +24,7 @@ class Brain(Protocol):
     name: str
     supports_logprobs: bool
 
-    def chat(self, messages: Sequence[Message], max_tokens: int = 4000) -> str: ...
+    def chat(self, messages: Sequence[Message], max_tokens: int = 4000, schema: dict | None = None) -> str: ...
 
     def letter_probs(self, messages: Sequence[Message], letters: Sequence[str]) -> dict[str, float] | None: ...
 
@@ -38,19 +38,26 @@ class OpenAICompatBrain:
     base_url: str
     api_key: str = field(repr=False)
     supports_logprobs: bool = False
+    supports_json_schema: bool = False  # constrained decoding (llama.cpp, vLLM): output always parses
     timeout_s: float = 120.0
+    max_retries: int = 2
     chat_extra: dict[str, Any] = field(default_factory=dict)
     probe_extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        self._client = OpenAI(base_url=self.base_url, api_key=self.api_key, timeout=self.timeout_s, max_retries=2)
+        self._client = OpenAI(
+            base_url=self.base_url, api_key=self.api_key, timeout=self.timeout_s, max_retries=self.max_retries
+        )
 
-    def chat(self, messages: Sequence[Message], max_tokens: int = 4000) -> str:
+    def chat(self, messages: Sequence[Message], max_tokens: int = 4000, schema: dict | None = None) -> str:
+        extra = dict(self.chat_extra)
+        if schema is not None and self.supports_json_schema:
+            extra["response_format"] = {"type": "json_schema", "json_schema": {"name": "scores", "schema": schema}}
         resp = self._client.chat.completions.create(
             model=self.model,
             messages=list(messages),
             max_tokens=max_tokens,
-            **self.chat_extra,
+            **extra,
         )
         content = resp.choices[0].message.content
         if not content:
@@ -115,4 +122,20 @@ def glimmer_from_env() -> OpenAICompatBrain:
         supports_logprobs=True,
         timeout_s=900.0,  # first request may wait for a cold start (about 3 minutes)
         probe_extra={"extra_body": {"chat_template_kwargs": {"reasoning_strength": "low"}}},
+    )
+
+
+def llama_from_env() -> OpenAICompatBrain:
+    """Meta Llama 3.2 3B Instruct (open weights, 4-bit) on CPU with llama.cpp: no GPU, no API."""
+    return OpenAICompatBrain(
+        name="Meta Llama 3.2 3B (open weights, CPU)",
+        model=os.environ.get("GUARDIAN_LLM_MODEL", "llama-3.2-3b"),
+        base_url=os.environ["GUARDIAN_LLM_URL"],
+        api_key=os.environ["GUARDIAN_LLM_KEY"],
+        supports_logprobs=True,
+        supports_json_schema=True,
+        timeout_s=300.0,
+        max_retries=8,  # 503 "Loading model" while a cold container starts
+        chat_extra={"temperature": 0.1},
+        probe_extra={"temperature": 0.1},
     )

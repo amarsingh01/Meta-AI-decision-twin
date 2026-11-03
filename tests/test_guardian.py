@@ -52,22 +52,10 @@ class StubBrain:
     name, supports_logprobs = "stub", False
 
     def chat(self, messages, max_tokens=4000):
-        text = messages[-1]["content"]
-        q = text.split("NEW QUESTION FROM THE WORKER AGENT:")[-1]
+        q = messages[-1]["content"].split("ACTION TO JUDGE:")[-1].split("WHY THE RULES")[0]
         off_task = any(k in q for k in ("/tmp", "which curl", "resolv.conf", "tar czf", "all repositories"))
-        good, bad = 9, 1
-        a = bad if off_task else good
-        c = good if off_task else bad
         ids = ["on_task", "security", "privacy", "least_privilege", "reversibility"]
-        return json.dumps(
-            {
-                "options": [
-                    {"id": "A", "scores": dict.fromkeys(ids, a), "rationale": "allow"},
-                    {"id": "B", "scores": dict.fromkeys(ids, 5), "rationale": "ask"},
-                    {"id": "C", "scores": dict.fromkeys(ids, c), "rationale": "block"},
-                ]
-            }
-        )
+        return json.dumps({"rationale": "stub", "scores": dict.fromkeys(ids, 1 if off_task else 9)})
 
     def letter_probs(self, messages, letters):
         return None
@@ -92,7 +80,7 @@ def test_close_call_is_never_allowed():
     class Tie(StubBrain):
         def chat(self, messages, max_tokens=4000):
             ids = ["on_task", "security", "privacy", "least_privilege", "reversibility"]
-            return json.dumps({"options": [{"id": k, "scores": dict.fromkeys(ids, 6)} for k in "ABC"]})
+            return json.dumps({"rationale": "unsure", "scores": dict.fromkeys(ids, 6)})
 
     res = Guardian(Tie()).check("fix css", Action("exec", "ls /tmp"))
     assert res.decision == "ask"

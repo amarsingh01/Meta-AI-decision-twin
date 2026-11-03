@@ -12,10 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from twin.brain import Brain
-from twin.engine import DecisionTwin, ScoringError, safe_id
+from twin.engine import ScoringError
 from twin.profile import PROFILE_DIR, load_decisions, load_profile, split
-from twin.schema import Decision, Option, Question
+from twin.schema import Decision, Option
 
+from .assess import ActionAssessor
 from .policy import Action, Verdict
 from .policy import check as rule_check
 
@@ -52,6 +53,7 @@ class GuardResult:
             "action": self.action,
             "latency_ms": self.latency_ms,
             "scored": self.scored.model_dump(mode="json") if self.scored else None,
+            **self.extra,
         }
 
 
@@ -60,7 +62,8 @@ class Guardian:
         self.extra_hosts = frozenset(h.lower() for h in extra_hosts)
         self.profile = load_profile(Path(GUARDIAN_PROFILE))
         examples = split(load_decisions(Path(GUARDIAN_DECISIONS)), "train")
-        self._twin = DecisionTwin(brain, self.profile, examples, n_examples) if brain else None
+        self._assessor = ActionAssessor(brain, self.profile, examples, n_examples) if brain else None
+        self.judge_name = brain.name if brain else None
 
     def check(self, task: str, action: Action, recent: Sequence[str] = ()) -> GuardResult:
         started = time.monotonic()
@@ -75,25 +78,15 @@ class Guardian:
                 action=action.describe(),
                 latency_ms=int((time.monotonic() - started) * 1000),
             )
-        if self._twin is None:
+        if self._assessor is None:
             return GuardResult(
                 "ask",
                 "fallback",
                 f"{verdict.reason}; no model available, so the owner decides",
                 action=action.describe(),
             )
-        history = "; ".join(recent[-6:]) or "none yet"
-        q = Question(
-            id=safe_id(f"guard-{int(time.time() * 1000)}"),
-            question=f"The agent wants to {action.describe()}. What should the guardian do?",
-            context=(
-                f"Task the owner gave: {task}\nRecent agent actions: {history}\n"
-                f"Why the rules sent this for review: {verdict.reason}"
-            )[:2400],
-            options=OPTIONS,
-        )
         try:
-            d = self._twin.decide(q)
+            a = self._assessor.assess(task, action.describe(), recent, verdict.reason)
         except ScoringError as exc:
             return GuardResult(
                 "ask",
@@ -102,16 +95,15 @@ class Guardian:
                 action=action.describe(),
                 latency_ms=int((time.monotonic() - started) * 1000),
             )
-        decision = _FROM_CHOICE.get(d.chosen or "", "ask")
-        if d.needs_human and decision == "allow":
-            decision = "ask"  # never allow on a close call
-        chosen = next((o for o in d.options if o.id == d.chosen), None)
+        reason = a.rationale or verdict.reason
+        if a.vetoes:
+            reason = f"{reason} ({a.vetoes[0]})"
         return GuardResult(
-            decision=decision,
+            decision=a.decision,
             layer="model",
-            reason=(chosen.rationale if chosen else d.escalation_reason) or verdict.reason,
-            confidence=d.confidence,
-            scored=d,
+            reason=reason,
+            confidence=a.confidence,
             action=action.describe(),
             latency_ms=int((time.monotonic() - started) * 1000),
+            extra={"assessment": a.as_dict(), "judge": self.judge_name},
         )

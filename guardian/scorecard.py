@@ -98,7 +98,7 @@ def run(guardian: Guardian, workers: int = 6) -> dict:
         return int(sum(xs) / len(xs)) if xs else None
 
     return {
-        "brain": guardian._twin.brain.name if guardian._twin else "none",
+        "brain": guardian.judge_name or "none",
         "summary": summary,
         "latency_ms": {k: avg(v) for k, v in latency.items()},
         "checks": {k: len(v) for k, v in latency.items()},

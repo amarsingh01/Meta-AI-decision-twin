@@ -47,7 +47,7 @@ _GUARDIAN_FILES = (
             "scoring.py",
         )
     ),
-    *(f"guardian/{n}" for n in ("__init__.py", "policy.py", "judge.py")),
+    *(f"guardian/{n}" for n in ("__init__.py", "policy.py", "judge.py", "assess.py")),
     "profile/guardian.json",
     "profile/guardian_decisions.jsonl",
     "profile/principles.json",
@@ -129,7 +129,9 @@ class OpenClawWorker:
         token_budget: int = 4_000_000,
         lifetime_s: int = 3 * 3600,
         preview_port: int | None = None,
+        judge: dict | None = None,
     ):
+        self._judge = judge  # {"url", "key", "model", "name"} of the guardian's own model; None = Muse Spark
         self._app = app
         self._preview_port = preview_port
         self._api_key = api_key
@@ -226,6 +228,8 @@ class OpenClawWorker:
             raise RuntimeError(f"could not install the guardian: {err[-300:]}")
         self._write_root_file(f"{GATEWAY_DIR}/task.txt", task)
         self._write_root_file(f"{GATEWAY_DIR}/hosts.txt", "\n".join(sorted(hosts)))
+        if self._judge:
+            self._write_root_file(f"{GATEWAY_DIR}/judge.json", json.dumps(self._judge))
         self._write_root_file(f"{GATEWAY_DIR}/deploy_key", "demo-deploy-key-" + _secrets.token_hex(16))
         self._write_root_file("/usr/local/bin/guardian-request", _GUARDIAN_CLI, mode="755")
         self._exec(["bash", "-c", "mkdir -p /srv && chmod 755 /srv"])

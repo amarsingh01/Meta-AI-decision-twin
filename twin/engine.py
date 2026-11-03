@@ -127,13 +127,37 @@ class DecisionTwin:
 
     # ------------------------------------------------------------------ scoring
 
+    def _json_schema(self, q: Question) -> dict:
+        """Exact output shape, for back-ends with constrained decoding."""
+        ids = [pr.id for pr in self.profile.principles]
+        score = {"type": "integer", "minimum": 0, "maximum": 10}
+        option = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "enum": [o.id for o in q.options]},
+                "rationale": {"type": "string", "maxLength": 240},
+                "scores": {"type": "object", "properties": dict.fromkeys(ids, score), "required": ids},
+                "violates_hard_rule": {"type": "boolean"},
+            },
+            "required": ["id", "rationale", "scores", "violates_hard_rule"],
+        }
+        n = len(q.options)
+        return {
+            "type": "object",
+            "properties": {"options": {"type": "array", "items": option, "minItems": n, "maxItems": n}},
+            "required": ["options"],
+        }
+
     def _score(self, q: Question, examples: Sequence[PastDecision]) -> ModelScoring:
         messages = self._scoring_messages(q, examples)
         expected = {o.id for o in q.options}
         last_error = ""
         for _attempt in range(2):
             try:
-                reply = self.brain.chat(messages, max_tokens=16000)
+                if getattr(self.brain, "supports_json_schema", False):
+                    reply = self.brain.chat(messages, max_tokens=16000, schema=self._json_schema(q))
+                else:
+                    reply = self.brain.chat(messages, max_tokens=16000)
             except Exception as exc:  # network, rate limit or an empty reasoning-only reply
                 last_error = f"{type(exc).__name__}: {str(exc)[:200]}"
                 continue

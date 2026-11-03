@@ -44,9 +44,14 @@ def _make_brain(name: str):
 
 @app.function(
     image=image,
-    secrets=[modal.Secret.from_name("meta-api"), modal.Secret.from_name("glimmer")],
+    secrets=[
+        modal.Secret.from_name("meta-api"),
+        modal.Secret.from_name("glimmer"),
+        modal.Secret.from_name("guardian-llm"),
+    ],
     volumes={BUILDS: builds},
     timeout=4 * 3600,
+    nonpreemptible=True,  # a restart would replay a half-finished build
 )
 def build_job(
     run_id: str, task: str, brain: str = "spark", guardian: str = "on", redteam: str = "", persona: str = ""
@@ -78,7 +83,17 @@ def build_job(
         synthetic=profile.synthetic,
         guardian=_guardian_summary(guardian, redteam),
     )
-    worker = OpenClawWorker(app, os.environ["META_API_KEY"])
+    judge = (
+        {
+            "url": os.environ["GUARDIAN_LLM_URL"],
+            "key": os.environ["GUARDIAN_LLM_KEY"],
+            "model": "llama-3.2-3b",
+            "name": "Meta Llama 3.2 3B (open weights, CPU)",
+        }
+        if os.environ.get("GUARDIAN_LLM_URL")
+        else None
+    )
+    worker = OpenClawWorker(app, os.environ["META_API_KEY"], judge=judge)
     try:
         worker.start(WORKER_RULES, task=brief, guardian=guardian, redteam=redteam, hosts=hosts)
         limits = Limits(max_turns=30, max_decisions=6) if guardian else Limits()
@@ -115,7 +130,9 @@ def _guardian_summary(mode: str, redteam: str) -> dict | None:
     return {
         "mode": mode,
         "redteam": redteam or None,
-        "model": "Meta muse-spark-1.3 (guardian reviews)",
+        "model": "Meta Llama 3.2 3B, open weights on CPU"
+        if os.environ.get("GUARDIAN_LLM_URL")
+        else "Meta muse-spark-1.3",
         "principles": [p.model_dump() for p in gp.principles],
         "hard_rules": list(gp.hard_rules),
     }
@@ -173,15 +190,22 @@ def run_eval(brain: str) -> dict:
     return result
 
 
-@app.function(image=image, secrets=[modal.Secret.from_name("meta-api")], timeout=3600)
-def run_scorecard() -> dict:
+def _guardian_brain(name: str):
+    from twin.brain import llama_from_env, spark_from_env
+
+    return spark_from_env() if name == "spark" else llama_from_env()
+
+
+@app.function(
+    image=image, secrets=[modal.Secret.from_name("meta-api"), modal.Secret.from_name("guardian-llm")], timeout=3600
+)
+def run_scorecard(judge: str = "llama") -> dict:
     """Guardian scorecard (no guardian / rules only / rules + model); stored for the UI."""
     from guardian.judge import Guardian
     from guardian.scorecard import run
-    from twin.brain import spark_from_env
 
-    result = run(Guardian(spark_from_env()))
-    runs["guardian:scorecard"] = result
+    result = run(Guardian(_guardian_brain(judge)), workers=2 if judge == "llama" else 6)
+    runs[f"guardian:scorecard:{judge}"] = result
     return result
 
 
@@ -218,9 +242,9 @@ def compare(redteam_for: str = "signal"):
 
 
 @app.local_entrypoint()
-def scorecard():
-    r = run_scorecard.remote()
-    print(r["summary"])
+def scorecard(judge: str = "llama"):
+    r = run_scorecard.remote(judge)
+    print(r["summary"], r["latency_ms"])
 
 
 @app.local_entrypoint()
@@ -254,7 +278,7 @@ def main(task: str = DEFAULT_TASK, brain: str = "spark", guardian: str = "", red
 
 @app.function(
     image=image,
-    secrets=[modal.Secret.from_name("twin-ui"), modal.Secret.from_name("meta-api")],
+    secrets=[modal.Secret.from_name("twin-ui"), modal.Secret.from_name("guardian-llm")],
     volumes={BUILDS: builds},
     max_containers=1,
     timeout=300,
@@ -281,9 +305,9 @@ def web():
 
     from guardian.judge import Guardian
     from guardian.policy import Action
-    from twin.brain import spark_from_env
+    from twin.brain import llama_from_env
 
-    guardian = Guardian(spark_from_env())
+    guardian = Guardian(llama_from_env())
 
     def ask(task: str, kind: str, detail: str) -> dict:
         return guardian.check(task, Action(kind, detail)).as_event()

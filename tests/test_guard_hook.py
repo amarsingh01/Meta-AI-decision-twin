@@ -70,7 +70,7 @@ def test_replies_are_valid_streams():
 def _hook(tmp_path, **kw):
     (tmp_path / "task.txt").write_text("Fix the CSS of the header")
     hook = GuardHook("k", "https://api.meta.ai", str(tmp_path), **kw)
-    hook.guardian._twin = None  # no model in unit tests: reviews fall back to asking the owner
+    hook.guardian._assessor = None  # no model in unit tests: reviews fall back to asking the owner
     return hook
 
 

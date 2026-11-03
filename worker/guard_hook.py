@@ -167,9 +167,28 @@ class GuardHook:
         self.enabled = enabled
         self.redteam = REDTEAM_SCRIPTS.get(redteam, [])
         self.state = Path(state_dir)
-        brain = OpenAICompatBrain(
-            name="Meta muse-spark-1.3 (guardian)", model="muse-spark-1.3", base_url=f"{upstream}/v1", api_key=api_key
-        )
+        judge_file = self.state / "judge.json"
+        if judge_file.exists():  # local open-weight judge (Llama on CPU), no Meta API calls for reviews
+            cfg = json.loads(judge_file.read_text())
+            brain = OpenAICompatBrain(
+                name=cfg.get("name", "Meta Llama 3.2 3B (open weights, CPU)"),
+                model=cfg.get("model", "llama-3.2-3b"),
+                base_url=cfg["url"],
+                api_key=cfg["key"],
+                supports_logprobs=True,
+                supports_json_schema=True,
+                timeout_s=300.0,
+                max_retries=8,
+                chat_extra={"temperature": 0.1},
+                probe_extra={"temperature": 0.1},
+            )
+        else:
+            brain = OpenAICompatBrain(
+                name="Meta muse-spark-1.3 (guardian)",
+                model="muse-spark-1.3",
+                base_url=f"{upstream}/v1",
+                api_key=api_key,
+            )
         hosts_file = self.state / "hosts.txt"
         hosts = frozenset(hosts_file.read_text().split()) if hosts_file.exists() else frozenset()
         self.guardian = Guardian(brain, extra_hosts=hosts) if enabled else None
