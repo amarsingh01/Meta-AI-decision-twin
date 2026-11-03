@@ -29,7 +29,9 @@ RUN_TTL_S = 4 * 3600
 # Generated sites run in a sandbox: opaque origin, no access to this app, no outside requests.
 BUILT_CSP = (
     "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; "
-    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: https://upload.wikimedia.org https://api.gbif.org; "
+    "font-src 'self' data:; connect-src 'self' https://api.open-meteo.com https://air-quality-api.open-meteo.com "
+    "https://api.gbif.org https://en.wikipedia.org; "
     "frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
 )
 BUILT_TYPES = {".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".ico", ".txt", ".md", ".csv"}
@@ -180,9 +182,14 @@ def create_api(
         found = (
             _build_file(run_id, path or "index.html")
             or _build_file(run_id, f"{path.rstrip('/')}/index.html".lstrip("/"))
-            or (None if path else next(
-                (f for d in ("dist", "build", "public", "out") if (f := _build_file(run_id, f"{d}/index.html"))), None
-            ))
+            or (
+                None
+                if path
+                else next(
+                    (f for d in ("dist", "build", "public", "out") if (f := _build_file(run_id, f"{d}/index.html"))),
+                    None,
+                )
+            )
         )
         if not found:
             raise HTTPException(404)

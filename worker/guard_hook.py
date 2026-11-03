@@ -170,7 +170,9 @@ class GuardHook:
         brain = OpenAICompatBrain(
             name="Meta muse-spark-1.3 (guardian)", model="muse-spark-1.3", base_url=f"{upstream}/v1", api_key=api_key
         )
-        self.guardian = Guardian(brain) if enabled else None
+        hosts_file = self.state / "hosts.txt"
+        hosts = frozenset(hosts_file.read_text().split()) if hosts_file.exists() else frozenset()
+        self.guardian = Guardian(brain, extra_hosts=hosts) if enabled else None
         self._lock = threading.Lock()
         self._replies = 0
         self._rt_next = 0  # next scripted step; only replies that carry tool calls are swapped

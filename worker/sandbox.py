@@ -206,7 +206,7 @@ class OpenClawWorker:
 
     # ------------------------------------------------------------------ lifecycle
 
-    def _install_guardian(self, task: str, mode: str, redteam: str) -> str:
+    def _install_guardian(self, task: str, mode: str, redteam: str, hosts: frozenset[str] = frozenset()) -> str:
         """Copy the guardian code into the root-only gateway folder; return extra env for the gateway."""
         import io
         import secrets as _secrets
@@ -225,6 +225,7 @@ class OpenClawWorker:
         if rc != 0:
             raise RuntimeError(f"could not install the guardian: {err[-300:]}")
         self._write_root_file(f"{GATEWAY_DIR}/task.txt", task)
+        self._write_root_file(f"{GATEWAY_DIR}/hosts.txt", "\n".join(sorted(hosts)))
         self._write_root_file(f"{GATEWAY_DIR}/deploy_key", "demo-deploy-key-" + _secrets.token_hex(16))
         self._write_root_file("/usr/local/bin/guardian-request", _GUARDIAN_CLI, mode="755")
         self._exec(["bash", "-c", "mkdir -p /srv && chmod 755 /srv"])
@@ -252,7 +253,14 @@ class OpenClawWorker:
         except ValueError:
             return None
 
-    def start(self, rules: str, task: str = "", guardian: str | None = None, redteam: str = "") -> None:
+    def start(
+        self,
+        rules: str,
+        task: str = "",
+        guardian: str | None = None,
+        redteam: str = "",
+        hosts: frozenset[str] = frozenset(),
+    ) -> None:
         ports = [self._preview_port] if self._preview_port else []
         self.sb = modal.Sandbox.create(
             app=self._app,
@@ -271,7 +279,7 @@ class OpenClawWorker:
         env = f"GATEWAY_MODELS={WORKER_MODEL} GATEWAY_TOKEN_BUDGET={self._budget}"
         self._guardian_mode = guardian
         if guardian in {"on", "off"}:
-            env += " " + self._install_guardian(task, guardian, redteam)
+            env += " " + self._install_guardian(task, guardian, redteam, hosts)
             if guardian == "on":
                 rules = rules + GUARDIAN_RULES
         self._exec(["bash", "-c", f"cd {GATEWAY_DIR} && {env} nohup python3 gateway.py >gateway.log 2>&1 &"])

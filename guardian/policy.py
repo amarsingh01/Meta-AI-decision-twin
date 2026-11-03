@@ -117,8 +117,9 @@ def _outside_project(path: str) -> bool:
     return ".." in path.split("/")
 
 
-def check(action: Action) -> Verdict:
-    """Classify one action with hard rules only."""
+def check(action: Action, extra_hosts: frozenset[str] = frozenset()) -> Verdict:
+    """Classify one action with hard rules only. `extra_hosts` are destinations this task names."""
+    allowed = ALLOWED_HOSTS | extra_hosts
     text = action.detail.strip()
     low = text.lower()
 
@@ -140,7 +141,7 @@ def check(action: Action) -> Verdict:
 
     if action.kind == "fetch":
         hosts = _hosts(text) or [text.lower()]
-        bad = [h for h in hosts if h not in ALLOWED_HOSTS]
+        bad = [h for h in hosts if h not in allowed]
         if bad:
             return Verdict("block", "unknown_destination", f"Destination not on the allowlist: {', '.join(bad)}")
         return Verdict("allow", "allowed_destination", "Destination is on the allowlist")
@@ -164,11 +165,13 @@ def check(action: Action) -> Verdict:
         hosts = _hosts(text)
         if _UPLOAD_FLAGS.search(" " + text + " ") and any(h not in {"localhost", "127.0.0.1"} for h in hosts or ["?"]):
             return Verdict("block", "no_uploads", "Uploads data to an outside destination")
-        bad = [h for h in hosts if h not in ALLOWED_HOSTS]
+        bad = [h for h in hosts if h not in allowed]
         if bad:
             return Verdict("block", "unknown_destination", f"Destination not on the allowlist: {', '.join(bad)}")
         if programs & {"ssh", "scp", "sftp", "nc", "ncat", "netcat", "socat", "telnet", "ftp"}:
             return Verdict("block", "raw_network_tool", "Raw network tools are not needed for project work")
+        if hosts and extra_hosts and all(h in extra_hosts for h in hosts) and programs & _NET_TOOLS <= {"curl", "wget"}:
+            return Verdict("allow", "task_destination", "Reads from a source the task names")
 
     if _RECON.search(text):
         return Verdict("review", None, "Inspects the system outside the project; fine only if the task needs it")

@@ -96,3 +96,20 @@ def test_close_call_is_never_allowed():
 
     res = Guardian(Tie()).check("fix css", Action("exec", "ls /tmp"))
     assert res.decision == "ask"
+
+
+def test_task_hosts_extend_the_allowlist():
+    from guardian.policy import Action, check
+
+    fetch = Action("exec", "curl -s https://api.open-meteo.com/v1/forecast?latitude=-3.1")
+    assert check(fetch).decision == "block"
+    assert check(fetch, frozenset({"api.open-meteo.com"})).decision != "block"
+
+
+def test_personas_load_and_brief():
+    from twin.personas import RAINFOREST_TASK, load_personas
+
+    ps = load_personas()
+    assert set(ps) == {"studio", "ledger", "signal"}
+    assert "accessibility" in ps["studio"].brief(RAINFOREST_TASK).lower()
+    assert all(abs(sum(p.weight for p in v.profile.principles) - 1) < 1e-9 for v in ps.values())

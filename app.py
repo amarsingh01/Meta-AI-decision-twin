@@ -48,20 +48,28 @@ def _make_brain(name: str):
     volumes={BUILDS: builds},
     timeout=4 * 3600,
 )
-def build_job(run_id: str, task: str, brain: str = "spark", guardian: str = "on", redteam: str = "") -> dict:
+def build_job(
+    run_id: str, task: str, brain: str = "spark", guardian: str = "on", redteam: str = "", persona: str = ""
+) -> dict:
     from orchestrator.events import EventLog
     from orchestrator.loop import Limits, run_build
     from twin import DecisionTwin
+    from twin.personas import RAINFOREST_HOSTS, load_personas
     from twin.profile import load_profile
     from worker.protocol import WORKER_RULES
     from worker.sandbox import OpenClawWorker
 
     log = EventLog(runs, run_id)
-    profile = load_profile()
+    who = load_personas().get(persona) if persona else None
+    profile = who.profile if who else load_profile()
+    brief = who.brief(task) if who else task
+    hosts = RAINFOREST_HOSTS if who else frozenset()
     twin_brain = _make_brain(brain)
     log.emit(
         "run_started",
         task=task,
+        brief=brief,
+        persona=who.summary() if who else None,
         brain=twin_brain.name,
         worker="OpenClaw on Meta Muse Spark 1.3",
         principles=[p.model_dump() for p in profile.principles],
@@ -72,9 +80,10 @@ def build_job(run_id: str, task: str, brain: str = "spark", guardian: str = "on"
     )
     worker = OpenClawWorker(app, os.environ["META_API_KEY"])
     try:
-        worker.start(WORKER_RULES, task=task, guardian=guardian, redteam=redteam)
+        worker.start(WORKER_RULES, task=brief, guardian=guardian, redteam=redteam, hosts=hosts)
         limits = Limits(max_turns=30, max_decisions=6) if guardian else Limits()
-        summary = run_build(task, worker, DecisionTwin(twin_brain, profile), log, limits)
+        twin = DecisionTwin(twin_brain, profile, examples=() if who else None)
+        summary = run_build(brief, worker, twin, log, limits)
         for ev in worker.guardian_events():
             log.emit("guardian", turn=None, **{k: v for k, v in ev.items() if k != "ts"}, at=ev.get("ts"))
         receipt = worker.deploy_receipt()
@@ -174,6 +183,38 @@ def run_scorecard() -> dict:
     result = run(Guardian(spark_from_env()))
     runs["guardian:scorecard"] = result
     return result
+
+
+@app.local_entrypoint()
+def compare(redteam_for: str = "signal"):
+    """Three personas, one task, built in parallel.  modal run app.py::compare"""
+    from twin.personas import RAINFOREST_TASK, load_personas
+    from webapi import new_run_id
+
+    calls, entry = [], {"task": RAINFOREST_TASK, "runs": [], "started": time.time()}
+    for key, who in load_personas().items():
+        run_id = new_run_id()
+        rt = "exfil" if key == redteam_for else ""
+        _set_index(
+            run_id,
+            task=RAINFOREST_TASK[:200],
+            brain="spark",
+            status="running",
+            started=time.time(),
+            guardian="on",
+            redteam=rt or None,
+            persona=key,
+        )
+        entry["runs"].append({"persona": key, "name": who.name, "run_id": run_id})
+        calls.append(build_job.spawn(run_id, RAINFOREST_TASK, "spark", "on", rt, key))
+        time.sleep(1.1)  # distinct run ids
+    runs["compare"] = entry
+    print(entry)
+    for c in calls:
+        try:
+            print(c.get())
+        except Exception as exc:
+            print("run failed:", exc)
 
 
 @app.local_entrypoint()

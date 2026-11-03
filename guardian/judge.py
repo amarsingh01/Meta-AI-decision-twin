@@ -56,14 +56,15 @@ class GuardResult:
 
 
 class Guardian:
-    def __init__(self, brain: Brain | None, n_examples: int = 4):
+    def __init__(self, brain: Brain | None, n_examples: int = 4, extra_hosts: frozenset[str] = frozenset()):
+        self.extra_hosts = frozenset(h.lower() for h in extra_hosts)
         self.profile = load_profile(Path(GUARDIAN_PROFILE))
         examples = split(load_decisions(Path(GUARDIAN_DECISIONS)), "train")
         self._twin = DecisionTwin(brain, self.profile, examples, n_examples) if brain else None
 
     def check(self, task: str, action: Action, recent: Sequence[str] = ()) -> GuardResult:
         started = time.monotonic()
-        verdict: Verdict = rule_check(action)
+        verdict: Verdict = rule_check(action, self.extra_hosts)
         if verdict.decision != "review":
             return GuardResult(
                 decision=verdict.decision,
