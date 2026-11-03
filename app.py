@@ -157,6 +157,24 @@ def run_eval(brain: str) -> dict:
     return result
 
 
+@app.function(image=image, secrets=[modal.Secret.from_name("meta-api")], timeout=3600)
+def run_scorecard() -> dict:
+    """Guardian scorecard (no guardian / rules only / rules + model); stored for the UI."""
+    from guardian.judge import Guardian
+    from guardian.scorecard import run
+    from twin.brain import spark_from_env
+
+    result = run(Guardian(spark_from_env()))
+    runs["guardian:scorecard"] = result
+    return result
+
+
+@app.local_entrypoint()
+def scorecard():
+    r = run_scorecard.remote()
+    print(r["summary"])
+
+
 @app.local_entrypoint()
 def evaluate(brain: str = "glimmer"):
     r = run_eval.remote(brain)
@@ -170,7 +188,15 @@ def main(task: str = DEFAULT_TASK, brain: str = "spark", guardian: str = "", red
     from webapi import new_run_id
 
     run_id = new_run_id()
-    _set_index(run_id, task=task[:200], brain=brain, status="running", started=time.time())
+    _set_index(
+        run_id,
+        task=task[:200],
+        brain=brain,
+        status="running",
+        started=time.time(),
+        guardian=guardian or None,
+        redteam=redteam or None,
+    )
     print(f"run {run_id}")
     print(build_job.remote(run_id, task, brain, guardian or None, redteam))
 
@@ -178,14 +204,20 @@ def main(task: str = DEFAULT_TASK, brain: str = "spark", guardian: str = "", red
 # --------------------------------------------------------------------------- web UI
 
 
-@app.function(image=image, secrets=[modal.Secret.from_name("twin-ui")], volumes={BUILDS: builds}, max_containers=1)
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("twin-ui"), modal.Secret.from_name("meta-api")],
+    volumes={BUILDS: builds},
+    max_containers=1,
+    timeout=300,
+)
 @modal.concurrent(max_inputs=50)
 @modal.asgi_app()
 def web():
     from webapi import create_api
 
-    def launch(run_id: str, task: str, brain: str) -> None:
-        build_job.spawn(run_id, task, brain)
+    def launch(run_id: str, task: str, brain: str, guardian: str = "on", redteam: str = "") -> None:
+        build_job.spawn(run_id, task, brain, guardian, redteam)
 
     def read_build(run_id: str) -> bytes | None:
         path = Path(BUILDS) / run_id / "site.tar.gz"
@@ -199,4 +231,13 @@ def web():
             builds.reload()
         return path.read_bytes() if path.exists() else None
 
-    return create_api(runs, os.environ["ACCESS_TOKEN"], Path("/root/web"), launch, read_build, read_shot)
+    from guardian.judge import Guardian
+    from guardian.policy import Action
+    from twin.brain import spark_from_env
+
+    guardian = Guardian(spark_from_env())
+
+    def ask(task: str, kind: str, detail: str) -> dict:
+        return guardian.check(task, Action(kind, detail)).as_event()
+
+    return create_api(runs, os.environ["ACCESS_TOKEN"], Path("/root/web"), launch, read_build, read_shot, ask)

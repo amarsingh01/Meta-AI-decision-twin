@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import mimetypes
 import re
 import secrets
@@ -18,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from orchestrator.events import read_events
-from twin.profile import load_decisions, load_profile
+from twin.profile import PROFILE_DIR, load_decisions, load_profile
 
 RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 STATIC = frozenset({"app.js", "style.css"})
@@ -49,18 +51,46 @@ def set_index(store: MutableMapping[str, Any], run_id: str, **fields: Any) -> No
     store["index"] = index
 
 
+ASK_PER_IP_HOUR = 6
+ASK_PER_DAY = 200
+GUARDIAN_PROFILE_FILE = PROFILE_DIR / "guardian.json"
+
+
+class AskGuardian(BaseModel):
+    task: str = Field(min_length=5, max_length=400)
+    kind: str = Field(pattern="^(exec|write|read|fetch|credential)$")
+    detail: str = Field(min_length=1, max_length=300)
+
+
+def _client_key(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    return hashlib.sha256(ip.encode()).hexdigest()[:16]
+
+
+def _take(store: MutableMapping[str, Any], key: str, limit: int) -> bool:
+    n = int(store.get(key, 0))
+    if n >= limit:
+        return False
+    store[key] = n + 1
+    return True
+
+
 class StartRun(BaseModel):
     task: str = Field(min_length=10, max_length=1500)
     brain: str = Field(pattern="^(spark|glimmer)$")
+    guardian: str = Field(default="on", pattern="^(on|off)$")
+    redteam: str = Field(default="", pattern="^(|exfil)$")
 
 
 def create_api(
     store: MutableMapping[str, Any],
     access_token: str,
     web_dir: Path,
-    launch: Callable[[str, str, str], None],
+    launch: Callable[..., None],
     read_build: Callable[[str], bytes | None] = lambda run_id: None,
     read_shot: Callable[[str], bytes | None] = lambda run_id: None,
+    ask: Callable[[str, str, str], dict] | None = None,
 ) -> FastAPI:
     if len(access_token) < 16:
         raise ValueError("access token is too short")
@@ -95,6 +125,22 @@ def create_api(
     @api.get("/api/eval")
     def evaluation():
         return {b: store.get(f"eval:{b}") for b in ("glimmer", "spark")}
+
+    @api.get("/api/guardian")
+    def guardian_info():
+        profile = json.loads(GUARDIAN_PROFILE_FILE.read_text()) if GUARDIAN_PROFILE_FILE.exists() else None
+        return {"profile": profile, "scorecard": store.get("guardian:scorecard"), "ask_enabled": ask is not None}
+
+    @api.post("/api/guardian/ask")
+    def guardian_ask(body: AskGuardian, request: Request):
+        if ask is None:
+            raise HTTPException(503, "the live guardian is not enabled here")
+        day, hour = time.strftime("%Y%m%d"), time.strftime("%Y%m%d%H")
+        if not _take(store, f"ask:ip:{_client_key(request)}:{hour}", ASK_PER_IP_HOUR):
+            raise HTTPException(429, f"limit reached: {ASK_PER_IP_HOUR} questions per hour")
+        if not _take(store, f"ask:day:{day}", ASK_PER_DAY):
+            raise HTTPException(429, "the daily limit for the live guardian is reached; try tomorrow")
+        return ask(body.task, body.kind, body.detail)
 
     @api.get("/api/runs")
     def list_runs():
@@ -164,8 +210,17 @@ def create_api(
         if any(v.get("status") == "running" and now - v.get("started", 0) < RUN_TTL_S for v in index.values()):
             raise HTTPException(429, "a build is already running")
         run_id = new_run_id()
-        set_index(store, run_id, task=body.task[:200], brain=body.brain, status="running", started=now)
-        launch(run_id, body.task, body.brain)
+        set_index(
+            store,
+            run_id,
+            task=body.task[:200],
+            brain=body.brain,
+            status="running",
+            started=now,
+            guardian=body.guardian,
+            redteam=body.redteam or None,
+        )
+        launch(run_id, body.task, body.brain, body.guardian, body.redteam)
         return {"id": run_id}
 
     return api

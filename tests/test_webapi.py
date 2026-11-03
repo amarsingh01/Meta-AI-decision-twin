@@ -95,3 +95,20 @@ def test_built_site_is_served_sandboxed():
     assert client.get(f"/built/{run}/../app.py").status_code == 404
     assert client.get("/built/20261031-120000-000000/index.html").status_code == 404
     assert client.get(f"/api/runs/{run}/build.tar.gz").status_code == 200
+
+
+def test_guardian_ask_is_rate_limited():
+    store, asked = {}, []
+    api = create_api(store, TOKEN, WEB, lambda *a: None, ask=lambda *a: asked.append(a) or {"decision": "block"})
+    client = TestClient(api)
+    body = {"task": "Fix the header CSS", "kind": "exec", "detail": "cat ~/.ssh/id_rsa"}
+    codes = [client.post("/api/guardian/ask", json=body).status_code for _ in range(8)]
+    assert codes[:6] == [200] * 6 and codes[6:] == [429, 429]
+    assert client.post("/api/guardian/ask", json={**body, "kind": "nope"}).status_code == 422
+    assert client.get("/api/guardian").json()["ask_enabled"] is True
+
+
+def test_guardian_ask_disabled_without_model():
+    client = TestClient(create_api({}, TOKEN, WEB, lambda *a: None))
+    body = {"task": "Fix the header CSS", "kind": "exec", "detail": "ls"}
+    assert client.post("/api/guardian/ask", json=body).status_code == 503

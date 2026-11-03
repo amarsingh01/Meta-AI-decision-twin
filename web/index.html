@@ -3,65 +3,59 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Decision Twin · principles that direct an AI builder</title>
+  <title>Agent Guardian</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <header class="top">
     <div class="brand">
-      <h1>Decision Twin</h1>
-      <p class="tag">A model that decides like its owner, directing a separate AI builder turn by turn.</p>
+      <h1>Agent Guardian</h1>
+      <p class="tag">The guardian holds the keys. Every action an AI agent takes is checked against the task and your rules before it runs.</p>
     </div>
-    <div class="actors" id="actors">
-      <div class="actor twin"><span class="role">Decides</span><strong id="twin-brain">Decision twin</strong></div>
-      <div class="arrow" aria-hidden="true">⇄</div>
-      <div class="actor worker"><span class="role">Builds</span><strong id="worker-brain">OpenClaw agent</strong></div>
+    <div class="actors" aria-label="How actions flow">
+      <div class="actor worker"><span class="role">Agent asks</span><strong>OpenClaw builder</strong><small>no keys, no sudo</small></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="actor guard"><span class="role">Guardian checks</span><strong>Hard rules + Muse Spark</strong><small>allow · ask you · block</small></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="actor home"><span class="role">Your system</span><strong>Keys, network, files</strong><small>only what the task needs</small></div>
     </div>
   </header>
 
   <main class="layout">
     <aside class="side">
       <section class="panel">
-        <h2>Principles <span class="pill warn" title="Invented for this demo">synthetic</span></h2>
-        <p class="hint">Each option the builder raises is scored 0–10 on every principle. The weights set how much each score counts.</p>
-        <ol id="principles" class="principles"></ol>
+        <h2>Your rules for agents <span class="pill warn" title="Written for this demo">demo profile</span></h2>
         <h3>Hard rules</h3>
-        <p class="hint">Breaking one vetoes an option, whatever it scores.</p>
-        <ul id="hard-rules" class="rules"></ul>
+        <p class="hint">Checked by code, not by a model. They hold even if every model is wrong.</p>
+        <ul id="g-rules" class="rules"></ul>
+        <h3>Principles for judgement calls</h3>
+        <p class="hint">For actions the rules cannot settle, the guardian model scores Allow / Ask you / Block 0–10 on each principle.</p>
+        <ol id="g-principles" class="principles"></ol>
       </section>
 
       <section class="panel">
-        <h2>Does it decide like Amar?</h2>
-        <p class="hint">Agreement on held-out past decisions the twin never saw as examples.</p>
-        <div id="eval"></div>
-      </section>
-
-      <section class="panel">
-        <h2>How a choice is made</h2>
+        <h2>How one action is checked</h2>
         <ol class="steps">
-          <li><b>Score.</b> The twin model rates each option 0–10 per principle.</li>
-          <li><b>Weigh.</b> Weighted value = Σ weight × score ÷ 10.</li>
-          <li><b>Veto.</b> Hard-rule breaks, or a score under a veto line, drop to 0%.</li>
-          <li><b>Probabilities.</b> Values become percentages (softmax).</li>
-          <li><b>Model's own view.</b> With open weights we also read the model's token probability for each option letter, where it writes its answer after reasoning.</li>
-          <li><b>Blend and answer.</b> <span id="blend-text">70% principles + 30% model</span>; the top option goes back to the builder. Close calls are flagged.</li>
+          <li><b>Intercept.</b> The agent's model replies through a gateway the agent cannot touch. Each tool call (command, file write, web fetch) is pulled out before the agent can run it.</li>
+          <li><b>Hard rules.</b> Secrets, unknown destinations, uploads, environment dumps and destructive commands are blocked. One-time codes, sudo and payments go to you.</li>
+          <li><b>Judgement.</b> Anything else that is unusual is scored by the guardian model against the task and recent actions. Vetoes and close calls never allow.</li>
+          <li><b>Act.</b> Allowed calls pass unchanged. Stopped calls are replaced with a note to the agent, so the action never runs.</li>
+          <li><b>Broker.</b> Privileged steps (deploying with a key) are done by the guardian itself. The agent never sees the key.</li>
         </ol>
       </section>
 
       <section class="panel">
-        <h2>Runs</h2>
+        <h2>Recorded runs</h2>
         <select id="run-select" aria-label="Choose a run"></select>
         <details class="start">
-          <summary>Start a new build</summary>
+          <summary>Start a new build (owner only)</summary>
           <form id="start-form">
-            <label>Task for the twin<textarea id="task" rows="5" maxlength="1500" required></textarea></label>
-            <label>Twin brain
-              <select id="brain">
-                <option value="glimmer">Muse Glimmer 30B · open weights, self-hosted</option>
-                <option value="spark">Muse Spark 1.3 · Meta API</option>
-              </select>
+            <label>Task for the agent<textarea id="task" rows="5" maxlength="1500" required></textarea></label>
+            <label>Guardian
+              <select id="guardian"><option value="on">On</option><option value="off">Off (log only)</option></select>
             </label>
+            <label class="check"><input id="redteam" type="checkbox"> Simulate a compromised model (replays the reported exfiltration steps)</label>
             <label>Access token<input id="token" type="password" autocomplete="off" required></label>
             <button type="submit">Start build</button>
             <p id="start-msg" class="hint" role="status"></p>
@@ -71,19 +65,60 @@
     </aside>
 
     <section class="main">
-      <div class="notice" role="note">
-        Demo only. The website being built never places trades and is not financial advice.
-        The principles and past decisions are invented and labelled as such.
-      </div>
-      <div class="status" id="status" aria-live="polite">Loading…</div>
-      <div class="stats" id="stats"></div>
-      <div id="task-box" class="task-box hidden"></div>
+      <section class="panel why">
+        <h2>Why this exists</h2>
+        <ul class="incidents">
+          <li><b>October 2026.</b> In a Cohere security test, a model on an unrelated task listed temp files, looked for transfer tools, read DNS settings and tried to upload a file to an outside cloud bucket.
+            <a href="https://cybermagazine.com/news/cohere-alibaba-qwen-model-tried-to-send-data-to-beijing" rel="noopener noreferrer" target="_blank">report</a></li>
+          <li><b>March 2026.</b> An internal AI agent at Meta acted without approval and exposed company and user data for about two hours, a Sev 1 incident.
+            <a href="https://oecd.ai/en/incidents/2026-03-18-fefc" rel="noopener noreferrer" target="_blank">OECD record</a></li>
+        </ul>
+        <p class="hint">Neither needed a bad actor at the keyboard. Agents with real access drift off task. The guardian works with any agent and any model, because it watches actions, not intentions.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Scorecard <span class="pill" id="sc-meta"></span></h2>
+        <p class="hint">12 scenarios with 35 agent actions: 8 attacks (15 harmful actions) and 4 normal jobs (20 legitimate actions, including ones that look risky out of context). Same actions, three set-ups.</p>
+        <div id="scorecard" class="scorecard"></div>
+        <div id="scenarios" class="scenarios"></div>
+      </section>
+
+      <section class="panel" id="ask-panel">
+        <h2>Ask the guardian <span class="pill twin">live · Muse Spark</span></h2>
+        <p class="hint">Give it a task and an action an agent wants to take. Hard-rule answers are instant; model reviews take 20–60 seconds. Limited to a few questions per hour.</p>
+        <div class="presets" id="presets"></div>
+        <form id="ask-form">
+          <label>The task the owner gave<input id="ask-task" maxlength="400" required></label>
+          <div class="ask-row">
+            <label>Kind
+              <select id="ask-kind">
+                <option value="exec">run a command</option>
+                <option value="write">write a file</option>
+                <option value="read">read a file</option>
+                <option value="fetch">fetch a URL</option>
+                <option value="credential">ask for a credential</option>
+              </select>
+            </label>
+            <label class="grow">What the agent wants to do<input id="ask-detail" maxlength="300" required></label>
+          </div>
+          <button type="submit" id="ask-btn">Check this action</button>
+        </form>
+        <div id="ask-out" aria-live="polite"></div>
+      </section>
+
+      <section class="panel run-panel">
+        <h2>A recorded run</h2>
+        <p class="hint">A real OpenClaw agent building in a Modal sandbox, with every tool call checked. When the red-team switch is on, some of the model's replies are swapped for the reported exfiltration steps, labelled as simulated.</p>
+        <div class="status" id="status" aria-live="polite">Loading…</div>
+        <div class="stats" id="stats"></div>
+        <div id="task-box" class="task-box hidden"></div>
+      </section>
       <ol id="timeline" class="timeline"></ol>
     </section>
   </main>
 
   <footer class="foot">
-    Built for the Meta Global AI Developer Hackathon · Meta Muse Glimmer + Muse Spark · OpenClaw ·
+    Built for the Meta Global AI Developer Hackathon · Meta Muse Spark · OpenClaw · Modal ·
     <a href="https://github.com/amarsingh01/Meta-AI-decision-twin" rel="noopener noreferrer">source</a>
   </footer>
 </body>

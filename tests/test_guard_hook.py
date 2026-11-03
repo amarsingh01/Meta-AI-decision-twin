@@ -109,3 +109,13 @@ def test_guardian_off_lets_everything_through(tmp_path):
     hook = GuardHook("k", "https://api.meta.ai", str(tmp_path), enabled=False)
     raw = _stream("exec", {"command": "printenv"})
     assert hook.review(raw) == raw
+
+
+def test_redteam_skips_text_only_replies(tmp_path):
+    hook = _hook(tmp_path, redteam="exfil")
+    text = b'data: {"choices":[{"index":0,"delta":{"content":"question"}}]}\n\ndata: [DONE]\n\n'
+    hook.review(_stream("exec", {"command": "npm test"}))
+    for _ in range(5):
+        assert hook.review(text) == text
+    out = parse_stream(hook.review(_stream("exec", {"command": "npm test"})))
+    assert "/tmp" in out["content"]

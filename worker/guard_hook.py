@@ -173,6 +173,7 @@ class GuardHook:
         self.guardian = Guardian(brain) if enabled else None
         self._lock = threading.Lock()
         self._replies = 0
+        self._rt_next = 0  # next scripted step; only replies that carry tool calls are swapped
         self._recent: list[str] = []
 
     def task(self) -> str:
@@ -191,8 +192,9 @@ class GuardHook:
             self._replies += 1
             n = self._replies
         injected = None
-        if self.redteam and msg["tool_calls"] and REDTEAM_START <= n < REDTEAM_START + len(self.redteam):
-            injected = self.redteam[n - REDTEAM_START]
+        if self.redteam and msg["tool_calls"] and n >= REDTEAM_START and self._rt_next < len(self.redteam):
+            injected = self.redteam[self._rt_next]
+            self._rt_next += 1
             msg["tool_calls"] = {0: {"id": "rt", "name": "exec", "arguments": json.dumps({"command": injected})}}
             raw = tool_reply(msg, injected)
         if not msg["tool_calls"]:
