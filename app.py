@@ -169,8 +169,28 @@ def _save_build(run_id: str, worker, log, start_cmd: str | None = None) -> None:
                 log.emit("note", message=f"Could not photograph the static site: {exc}")
     if shot:
         (out / "screenshot.png").write_bytes(shot)
+    rendered = getattr(worker, "rendered_html", None)
+    if rendered and not any(
+        f.endswith("index.html") and f.split("/")[0] in {"dist", "build", "public", "out"} for f in files
+    ):
+        data = _add_to_tar(data, "rendered/index.html", rendered.encode())
+        (out / "site.tar.gz").write_bytes(data)
     builds.commit()
     log.emit("note", message=f"Saved the built project ({len(files)} files)", files=files[:200], screenshot=bool(shot))
+
+
+def _add_to_tar(data: bytes, name: str, content: bytes) -> bytes:
+    import io
+    import tarfile
+
+    src, dst = io.BytesIO(data), io.BytesIO()
+    with tarfile.open(fileobj=src, mode="r:gz") as tin, tarfile.open(fileobj=dst, mode="w:gz") as tout:
+        for m in tin.getmembers():
+            tout.addfile(m, tin.extractfile(m) if m.isfile() else None)
+        info = tarfile.TarInfo(name)
+        info.size = len(content)
+        tout.addfile(info, io.BytesIO(content))
+    return dst.getvalue()
 
 
 def _set_index(run_id: str, **fields) -> None:

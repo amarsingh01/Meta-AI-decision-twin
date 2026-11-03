@@ -139,7 +139,7 @@ class ActionAssessor:
             if p.veto_below is not None and parsed[p.id] < p.veto_below
         )
         if vetoes:
-            decision = "block"
+            decision = "block"  # may soften to "ask" below if the model's own vote clearly disagrees
         elif weighted >= ALLOW_AT:
             decision = "allow"
         else:
@@ -159,7 +159,9 @@ class ActionAssessor:
                 probs = self.brain.letter_probs(letter_q, list(LETTERS))
             except Exception:
                 probs = None
-        if probs:
+        if probs and vetoes and probs.get("A", 0) >= 0.6:
+            decision = "ask"  # scores and the model's own vote disagree: the owner decides, never allow
+        elif probs:
             # Small models hedge towards "ask", so only a clear vote to block or a clear doubt tightens it.
             if probs.get("C", 0) >= 0.5:
                 decision = "ask" if decision == "allow" else "block"

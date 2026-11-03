@@ -102,8 +102,21 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     page = b.new_page(viewport={"width": 1280, "height": 800})
     page.goto(sys.argv[1], wait_until="networkidle", timeout=30000)
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(2500)
     page.screenshot(path=sys.argv[2], full_page=True)
+    if len(sys.argv) > 3:  # a static copy of the rendered page, styles inlined, for viewing later
+        html = page.evaluate('''() => {
+          const doc = document.documentElement.cloneNode(true);
+          doc.querySelectorAll('link[rel=stylesheet]').forEach((l) => {
+            const sheet = [...document.styleSheets].find((s) => s.href === l.href);
+            let css = '';
+            try { css = [...sheet.cssRules].map((r) => r.cssText).join(' '); } catch (e) {}
+            const st = document.createElement('style'); st.textContent = css; l.replaceWith(st);
+          });
+          doc.querySelectorAll('script').forEach((s) => s.remove());
+          return '<!doctype html>' + doc.outerHTML;
+        }''')
+        open(sys.argv[3], "w").write(html)
     b.close()
 """
 
@@ -174,22 +187,31 @@ class OpenClawWorker:
         return data
 
     def screenshot(self, start_cmd: str, port: int | None = None) -> bytes | None:
-        """Start the built app inside the sandbox and photograph it locally. Nothing is exposed."""
+        """Start the built app inside the sandbox and photograph it locally. Nothing is exposed.
+
+        Also keeps a static copy of the rendered page in self.rendered_html (styles inlined)."""
+        self.rendered_html = None
         if port is None:
             ports = re.findall(r"(?:--port[ =]|-p |:|\s)(\d{4,5})\b", start_cmd)
             port = int(ports[-1]) if ports else 3000
         start = f"PORT={port} nohup bash -lc {shlex.quote(start_cmd)} >/tmp/app.log 2>&1 &"
         self.run(start, timeout=60)
+        candidates = " ".join(dict.fromkeys(str(p) for p in (port, 3000, 5000, 8000, 8080, 4173, 5173)))
         wait = (
-            f"for i in $(seq 60); do (echo >/dev/tcp/127.0.0.1/{port}) 2>/dev/null && exit 0; sleep 0.5; done; exit 1"
+            f"for i in $(seq 60); do for p in {candidates}; do "
+            "(echo >/dev/tcp/127.0.0.1/$p) 2>/dev/null && { echo $p; exit 0; }; done; sleep 0.5; done; exit 1"
         )
-        if self._exec(["bash", "-c", wait])[0] != 0:
+        rc, out, _ = self._exec(["bash", "-c", wait])
+        if rc != 0:
             return None
+        port = int(out.strip().splitlines()[-1])
         rc, _, _ = self._exec(["runuser", "-u", WORKER_USER, "--", "bash", "-c", "cat > /tmp/shot.py"], _SHOT)
-        rc, _ = self.run(f"python3 /tmp/shot.py http://127.0.0.1:{port}/ /tmp/shot.png", timeout=120)
+        rc, _ = self.run(f"python3 /tmp/shot.py http://127.0.0.1:{port}/ /tmp/shot.png /tmp/rendered.html", timeout=120)
         if rc != 0:
             return None
         rc, out, _ = self._exec(["bash", "-c", "base64 -w0 /tmp/shot.png"])
+        _, html, _ = self._exec(["bash", "-c", "cat /tmp/rendered.html 2>/dev/null"])
+        self.rendered_html = html or None
         return base64.b64decode(out) if rc == 0 and out else None
 
     def static_site_dir(self) -> str | None:

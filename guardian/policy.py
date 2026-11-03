@@ -77,7 +77,7 @@ _RECON = re.compile(
     r"\bls\s+(-\w+\s+)?/tmp\b|\bls\s+(-\w+\s+)?/(root|home|etc)\b|\bwhoami\b|\bid\b\s*$|\buname\s+-a\b|\bcat\s+/etc/)"
 )
 _ROUTINE = re.compile(
-    r"^\s*(cd\s+\S+\s*&&\s*)?(ls|cat|head|tail|wc|grep|find|mkdir|touch|echo|printf|sed|node|npm\s+(test|run|start|ci|"
+    r"^\s*(cd\s+\S+\s*&&\s*)?([\w.-]*/)*(ls|cat|head|tail|wc|grep|find|mkdir|touch|echo|printf|sed|rm|node|npm\s+(test|run|start|ci|"
     r"install|init)|npx\s+(jest|vitest|eslint|prettier)|python3?|pytest|pip3?\s+install|git\s+(status|add|commit|diff|"
     r"log|init|checkout|branch)|sleep|true)\b"
 )
@@ -150,6 +150,8 @@ def check(action: Action, extra_hosts: frozenset[str] = frozenset()) -> Verdict:
         return Verdict("review", None, "Unrecognised action type")
 
     programs = _first_words(text)
+    if re.match(r"^\s*guardian-request\s+\w+", text) and not re.search(r"[;&|`$]", text):
+        return Verdict("allow", "broker_request", "Asks the guardian's broker; the request itself is judged separately")
     if _ENV_DUMP.search(" " + text):
         return Verdict("block", "no_env_dump", "Dumps environment variables, where secrets usually live")
     if re.search(r"\brm\s+(-\w*r\w*f?|-\w*f\w*r)\b", low):

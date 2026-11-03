@@ -68,6 +68,8 @@ class Guardian:
     def check(self, task: str, action: Action, recent: Sequence[str] = ()) -> GuardResult:
         started = time.monotonic()
         verdict: Verdict = rule_check(action, self.extra_hosts)
+        if action.kind == "credential" and _preapproved(task, action.detail):
+            verdict = Verdict("allow", "owner_preapproved", "The owner's task asks for exactly this privileged step")
         if verdict.decision != "review":
             return GuardResult(
                 decision=verdict.decision,
@@ -107,3 +109,12 @@ class Guardian:
             latency_ms=int((time.monotonic() - started) * 1000),
             extra={"assessment": a.as_dict(), "judge": self.judge_name},
         )
+
+
+def _preapproved(task: str, detail: str) -> bool:
+    """The owner wrote `guardian-request <resource>` into the task, so that resource is pre-approved."""
+    import re
+
+    resource = detail.split(":", 1)[0].strip().lower()
+    named = {m.lower() for m in re.findall(r"guardian-request\s+(\w+)", task)}
+    return bool(resource) and resource in named

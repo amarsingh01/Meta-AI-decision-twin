@@ -257,7 +257,11 @@ def create_api(
                 None
                 if path
                 else next(
-                    (f for d in ("dist", "build", "public", "out") if (f := _build_file(run_id, f"{d}/index.html"))),
+                    (
+                        f
+                        for d in ("dist", "build", "public", "out", "rendered")
+                        if (f := _build_file(run_id, f"{d}/index.html"))
+                    ),
                     None,
                 )
             )
