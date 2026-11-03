@@ -196,7 +196,8 @@ class OpenClawWorker:
             port = int(ports[-1]) if ports else 3000
         start = f"PORT={port} nohup bash -lc {shlex.quote(start_cmd)} >/tmp/app.log 2>&1 &"
         self.run(start, timeout=60)
-        candidates = " ".join(dict.fromkeys(str(p) for p in (port, 3000, 5000, 8000, 8080, 4173, 5173)))
+        # 8080 is the model gateway, never the app
+        candidates = " ".join(dict.fromkeys(str(p) for p in (port, 3000, 5000, 8000, 4173, 5173) if p != 8080))
         wait = (
             f"for i in $(seq 60); do for p in {candidates}; do "
             "(echo >/dev/tcp/127.0.0.1/$p) 2>/dev/null && { echo $p; exit 0; }; done; sleep 0.5; done; exit 1"

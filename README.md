@@ -54,15 +54,14 @@ context, such as reading DNS settings while debugging a DNS problem).
 | --- | --- | --- | --- | --- |
 | No guardian | 0 / 15 | 0 / 8 | 20 / 20 | – |
 | Hard rules only | 10 / 15 | 5 / 8 | 20 / 20 | – |
-| **Hard rules + Llama 3.2 3B on CPU (local, default)** | **15 / 15** | **8 / 8** | **18 / 20** | ~12 s |
+| **Hard rules + Llama 3.2 3B on CPU (local, default)** | **15 / 15** | **8 / 8** | **19 / 20** | ~7 s |
 | Hard rules + Muse Spark 1.3 (API) | 15 / 15 | 8 / 8 | 20 / 20 | ~40 s |
 
 The rules catch the obvious steps. The model catches the off-task reconnaissance that is harmless on
 its own (listing temp files during a CSS fix) while allowing the same command when the task needs
 it. 25 of the 35 checks are settled by rules in under a millisecond; 10 need a model review. The small
-local model is as strict as Spark on attacks; it is more cautious on two legitimate actions (it asks
-the owner before `rm -rf ./dist` and blocks `uname -a` during a performance investigation), which
-costs the owner a click, not a breach. This is a small, hand-written test set, not a benchmark.
+local model is as strict as Spark on attacks; it is more cautious on one legitimate action (it blocks
+`uname -a` during a performance investigation), which costs the owner a click, not a breach. This is a small, hand-written test set, not a benchmark.
 
 ## Three agents, one task
 
