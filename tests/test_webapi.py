@@ -139,7 +139,7 @@ def test_live_decision_jobs_and_limits():
     client = TestClient(api)
     body = {"personas": ["studio", "ledger"], "question": "Which chart library should the site use?"}
     r = client.post("/api/decide", json=body)
-    assert r.status_code == 200 and len(r.json()["jobs"]) == 2 and calls[0][1] == "studio"
+    assert r.status_code == 200 and len(r.json()["jobs"]) == 2 and calls[0][1] == ["studio", "ledger"]
     job = r.json()["jobs"][0]["id"]
     assert client.get(f"/api/decide/{job}").json()["stage"] == "queued"
     assert client.post("/api/decide", json={**body, "personas": ["hacker"]}).status_code == 422

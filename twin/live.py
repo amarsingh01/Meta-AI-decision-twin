@@ -38,6 +38,7 @@ def run_live_decision(
     question: str,
     context: str = "",
     options: list[str] | None = None,
+    drafted_by: str | None = None,
 ) -> dict:
     who = load_personas()[persona]
     state: dict[str, Any] = {"persona": who.summary(), "question": question, "context": context, "started": time.time()}
@@ -46,6 +47,8 @@ def run_live_decision(
         state.update(kw, updated=time.time())
         store[key] = dict(state)
 
+    if drafted_by:
+        state["drafted_by"] = drafted_by
     try:
         if not options:
             put(stage="drafting")
@@ -65,3 +68,34 @@ def run_live_decision(
     except Exception as exc:  # shown on the page
         put(stage="error", error=f"{type(exc).__name__}: {str(exc)[:300]}")
     return state
+
+
+def run_live_group(
+    store: MutableMapping[str, Any],
+    keys: list[str],
+    brain: Brain,
+    personas: list[str],
+    question: str,
+    context: str = "",
+    options: list[str] | None = None,
+) -> None:
+    """Same question, same options for every owner, so differences come from their principles alone."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    drafted_by = None
+    if not options:
+        for key in keys:
+            store[key] = {"stage": "drafting", "started": time.time()}
+        try:
+            options, drafted_by = draft_options(brain, question, context), brain.name
+        except Exception as exc:
+            for key in keys:
+                store[key] = {"stage": "error", "error": f"Could not draft options: {exc}"[:300]}
+            return
+    with ThreadPoolExecutor(max_workers=len(keys)) as pool:
+        list(
+            pool.map(
+                lambda kp: run_live_decision(store, kp[0], brain, kp[1], question, context, options, drafted_by),
+                zip(keys, personas, strict=True),
+            )
+        )

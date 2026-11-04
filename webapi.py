@@ -263,12 +263,16 @@ def create_api(
             raise HTTPException(429, f"limit reached: {DECIDE_PER_IP_HOUR} live decisions per hour")
         if not _take(store, f"decide:day:{day}", DECIDE_PER_DAY):
             raise HTTPException(429, "the daily limit for live decisions is reached; try tomorrow")
-        jobs = []
-        for p in body.personas:
-            key = f"decide:{uuid.uuid4().hex[:16]}"
-            store[key] = {"stage": "queued", "started": time.time()}
-            decide(key, p, body.question.strip(), body.context.strip(), options or None)
-            jobs.append({"persona": p, "id": key.split(":", 1)[1]})
+        jobs = [{"persona": p, "id": uuid.uuid4().hex[:16]} for p in body.personas]
+        for j in jobs:
+            store[f"decide:{j['id']}"] = {"stage": "queued", "started": time.time()}
+        decide(
+            [f"decide:{j['id']}" for j in jobs],
+            body.personas,
+            body.question.strip(),
+            body.context.strip(),
+            options or None,
+        )
         return {"jobs": jobs}
 
     @api.get("/api/decide/{job_id}")

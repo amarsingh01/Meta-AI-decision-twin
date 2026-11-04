@@ -356,7 +356,7 @@ function setStep(c, i) {
 function animateDecision(c, d, settings, principles) {
   const ps = principles.length ? principles : Object.keys(d.options[0].scores).map((id) => ({ id, name: id, weight: 0 }));
   const head = el("tr", {}, el("th", {}, "Option"),
-    ps.map((p) => el("th", { title: `${p.name}: ${p.description || ""}` }, p.name.split(" ")[0], el("small", {}, pct(p.weight)))),
+    ps.map((p) => el("th", { title: `${p.name}: ${p.description || ""}` }, p.id, el("small", {}, pct(p.weight)))),
     el("th", { title: "Σ weight × score ÷ 10" }, "Value"), el("th", { class: "final-col" }, "Probability"));
   const rows = d.options.map((o) => {
     const fill = el("div", { class: "fill" });
@@ -415,7 +415,7 @@ async function followJob(c, id) {
         setStep(c, 1);
         if (s.options && !c.shown) {
           c.shown = true;
-          c.body.replaceChildren(el("p", { class: "hint" }, s.drafted_by ? "Options drafted by Muse Spark:" : "Your options:"),
+          c.body.replaceChildren(el("p", { class: "hint" }, s.drafted_by ? "Options drafted by Muse Spark (the same three for every owner):" : "Your options:"),
             el("ul", { class: "reqs" }, s.options.map((o) => el("li", {}, `${o.id}) ${o.label}`))),
             el("p", { class: "hint" }, `Scoring each option on ${c.persona.principles.length} principles…`));
         }
