@@ -39,8 +39,9 @@ def test_start_requires_token(setup):
     assert client.post("/api/runs", json=body, headers={"X-Access-Token": "wrong"}).status_code == 401
     r = client.post("/api/runs", json=body, headers={"X-Access-Token": TOKEN})
     assert r.status_code == 200 and launched and launched[0][0] == r.json()["id"]
-    # only one build at a time
-    assert client.post("/api/runs", json=body, headers={"X-Access-Token": TOKEN}).status_code == 429
+    # at most three builds at a time
+    codes = [client.post("/api/runs", json=body, headers={"X-Access-Token": TOKEN}).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
 
 
 def test_start_validates_input(setup):
@@ -130,3 +131,17 @@ def test_finished_runs_are_cached_and_summarised():
     assert "20261104-010001-440d09:all" in store
     client = TestClient(create_api(store, TOKEN, WEB, lambda *a: None))
     assert len(client.get("/api/runs/20261104-010001-440d09/events").json()) == 4
+
+
+def test_live_decision_jobs_and_limits():
+    store, calls = {}, []
+    api = create_api(store, TOKEN, WEB, lambda *a: None, decide=lambda *a: calls.append(a))
+    client = TestClient(api)
+    body = {"personas": ["studio", "ledger"], "question": "Which chart library should the site use?"}
+    r = client.post("/api/decide", json=body)
+    assert r.status_code == 200 and len(r.json()["jobs"]) == 2 and calls[0][1] == "studio"
+    job = r.json()["jobs"][0]["id"]
+    assert client.get(f"/api/decide/{job}").json()["stage"] == "queued"
+    assert client.post("/api/decide", json={**body, "personas": ["hacker"]}).status_code == 422
+    assert client.post("/api/decide", json={**body, "options": ["only one"]}).status_code == 422
+    assert client.get("/api/decide/../../x").status_code in (400, 404)

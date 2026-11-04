@@ -25,6 +25,7 @@ from twin.profile import PROFILE_DIR, load_decisions, load_profile
 RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 STATIC = frozenset({"app.js", "style.css"})
 RUN_TTL_S = 4 * 3600
+MAX_PARALLEL_BUILDS = 3
 
 # Generated sites run in a sandbox: opaque origin, no access to this app, no outside requests.
 BUILT_CSP = (
@@ -172,11 +173,24 @@ def summarise_run(store: MutableMapping[str, Any], run_id: str) -> dict:
     return out
 
 
+DECIDE_PER_IP_HOUR = 10
+DECIDE_PER_DAY = 200
+PERSONA_KEYS = ("studio", "ledger", "signal")
+
+
+class LiveDecision(BaseModel):
+    personas: list[str] = Field(min_length=1, max_length=3)
+    question: str = Field(min_length=8, max_length=300)
+    context: str = Field(default="", max_length=600)
+    options: list[str] = Field(default_factory=list, max_length=4)
+
+
 class StartRun(BaseModel):
     task: str = Field(min_length=10, max_length=1500)
     brain: str = Field(pattern="^(spark|glimmer)$")
     guardian: str = Field(default="on", pattern="^(on|off)$")
     redteam: str = Field(default="", pattern="^(|exfil)$")
+    persona: str = Field(default="", pattern="^(|studio|ledger|signal)$")
 
 
 def create_api(
@@ -187,6 +201,7 @@ def create_api(
     read_build: Callable[[str], bytes | None] = lambda run_id: None,
     read_shot: Callable[[str], bytes | None] = lambda run_id: None,
     ask: Callable[[str, str, str], dict] | None = None,
+    decide: Callable[..., None] | None = None,
 ) -> FastAPI:
     if len(access_token) < 16:
         raise ValueError("access token is too short")
@@ -227,6 +242,43 @@ def create_api(
         profile = json.loads(GUARDIAN_PROFILE_FILE.read_text()) if GUARDIAN_PROFILE_FILE.exists() else None
         cards = {"llama": store.get("guardian:scorecard:llama"), "spark": store.get("guardian:scorecard")}
         return {"profile": profile, "scorecards": cards, "ask_enabled": ask is not None}
+
+    @api.get("/api/personas")
+    def personas():
+        from twin.personas import load_personas
+
+        return {k: v.summary() for k, v in load_personas().items()} | {"_live": decide is not None}
+
+    @api.post("/api/decide")
+    def live_decide(body: LiveDecision, request: Request):
+        if decide is None:
+            raise HTTPException(503, "live decisions are not enabled here")
+        if any(p not in PERSONA_KEYS for p in body.personas) or len(set(body.personas)) != len(body.personas):
+            raise HTTPException(422, "unknown persona")
+        options = [o.strip()[:120] for o in body.options if o.strip()]
+        if len(options) == 1:
+            raise HTTPException(422, "give 2 to 4 options, or none to let the model draft them")
+        day, hour = time.strftime("%Y%m%d"), time.strftime("%Y%m%d%H")
+        if not _take(store, f"decide:ip:{_client_key(request)}:{hour}", DECIDE_PER_IP_HOUR):
+            raise HTTPException(429, f"limit reached: {DECIDE_PER_IP_HOUR} live decisions per hour")
+        if not _take(store, f"decide:day:{day}", DECIDE_PER_DAY):
+            raise HTTPException(429, "the daily limit for live decisions is reached; try tomorrow")
+        jobs = []
+        for p in body.personas:
+            key = f"decide:{uuid.uuid4().hex[:16]}"
+            store[key] = {"stage": "queued", "started": time.time()}
+            decide(key, p, body.question.strip(), body.context.strip(), options or None)
+            jobs.append({"persona": p, "id": key.split(":", 1)[1]})
+        return {"jobs": jobs}
+
+    @api.get("/api/decide/{job_id}")
+    def live_decide_status(job_id: str):
+        if not re.fullmatch(r"[0-9a-f]{16}", job_id):
+            raise HTTPException(400, "bad request")
+        state = store.get(f"decide:{job_id}")
+        if state is None:
+            raise HTTPException(404)
+        return state
 
     @api.get("/api/compare")
     def compare():
@@ -332,12 +384,14 @@ def create_api(
             raise HTTPException(401, "access token required to start a run")
         now = time.time()
         index = store.get("index", {})
-        if any(v.get("status") == "running" and now - v.get("started", 0) < RUN_TTL_S for v in index.values()):
-            raise HTTPException(429, "a build is already running")
+        running = sum(v.get("status") == "running" and now - v.get("started", 0) < RUN_TTL_S for v in index.values())
+        if running >= MAX_PARALLEL_BUILDS:
+            raise HTTPException(429, f"{running} builds are already running; wait for one to finish")
         run_id = new_run_id()
         set_index(
             store,
             run_id,
+            persona=body.persona or None,
             task=body.task[:200],
             brain=body.brain,
             status="running",
@@ -345,7 +399,7 @@ def create_api(
             guardian=body.guardian,
             redteam=body.redteam or None,
         )
-        launch(run_id, body.task, body.brain, body.guardian, body.redteam)
+        launch(run_id, body.task, body.brain, body.guardian, body.redteam, body.persona)
         return {"id": run_id}
 
     return api

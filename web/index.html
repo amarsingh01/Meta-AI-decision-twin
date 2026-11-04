@@ -52,6 +52,9 @@
           <summary>Start a new build (owner only)</summary>
           <form id="start-form">
             <label>Task for the agent<textarea id="task" rows="5" maxlength="1500" required></textarea></label>
+            <label>Owner (decision twin)
+              <select id="persona"><option value="studio">Studio</option><option value="ledger">Ledger</option><option value="signal">Signal</option><option value="">Default profile</option></select>
+            </label>
             <label>Guardian
               <select id="guardian"><option value="on">On</option><option value="off">Off (log only)</option></select>
             </label>
@@ -74,6 +77,24 @@
             <a href="https://oecd.ai/en/incidents/2026-03-18-fefc" rel="noopener noreferrer" target="_blank">OECD record</a></li>
         </ul>
         <p class="hint">Neither needed a bad actor at the keyboard. Agents with real access drift off task. The guardian works with any agent and any model, because it watches actions, not intentions.</p>
+      </section>
+
+      <section class="panel" id="live-panel">
+        <h2>Watch a decision being made <span class="pill twin">live · Muse Spark</span></h2>
+        <p class="hint">Ask the kind of question a builder agent stops to ask. Each owner's decision twin scores every option 0–10 on that owner's principles; then the maths below turns the scores into probabilities, in front of you. Takes about 20–60 seconds.</p>
+        <div class="presets" id="live-presets"></div>
+        <form id="live-form">
+          <label>The decision<input id="live-q" maxlength="300" required></label>
+          <label>Context (optional)<input id="live-ctx" maxlength="600"></label>
+          <label>Options, one per line (optional: leave empty and Muse Spark drafts three)<textarea id="live-opts" rows="3" maxlength="500"></textarea></label>
+          <fieldset class="owners"><legend>Which owners decide</legend>
+            <label class="check"><input type="checkbox" name="owner" value="studio" checked> Studio</label>
+            <label class="check"><input type="checkbox" name="owner" value="ledger" checked> Ledger</label>
+            <label class="check"><input type="checkbox" name="owner" value="signal" checked> Signal</label>
+          </fieldset>
+          <button type="submit" id="live-btn">Decide</button>
+        </form>
+        <div id="live-out" class="live-out" aria-live="polite"></div>
       </section>
 
       <section class="panel" id="compare-panel">

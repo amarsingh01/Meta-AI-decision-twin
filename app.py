@@ -273,6 +273,15 @@ def scorecard(judge: str = "llama"):
     print(r["summary"], r["latency_ms"])
 
 
+@app.function(image=image, secrets=[modal.Secret.from_name("meta-api")], timeout=600, region="us-east")
+def decide_job(key: str, persona: str, question: str, context: str = "", options: list[str] | None = None) -> None:
+    """One live decision for the dashboard, written to the Dict as it progresses."""
+    from twin.brain import spark_from_env
+    from twin.live import run_live_decision
+
+    run_live_decision(runs, key, spark_from_env(), persona, question, context, options)
+
+
 @app.local_entrypoint()
 def evaluate(brain: str = "glimmer"):
     r = run_eval.remote(brain)
@@ -314,8 +323,11 @@ def main(task: str = DEFAULT_TASK, brain: str = "spark", guardian: str = "", red
 def web():
     from webapi import create_api
 
-    def launch(run_id: str, task: str, brain: str, guardian: str = "on", redteam: str = "") -> None:
-        build_job.spawn(run_id, task, brain, guardian, redteam)
+    def launch(run_id: str, task: str, brain: str, guardian: str = "on", redteam: str = "", persona: str = "") -> None:
+        build_job.spawn(run_id, task, brain, guardian, redteam, persona)
+
+    def decide(key: str, persona: str, question: str, context: str, options: list[str] | None) -> None:
+        decide_job.spawn(key, persona, question, context, options)
 
     def read_build(run_id: str) -> bytes | None:
         path = Path(BUILDS) / run_id / "site.tar.gz"
@@ -338,4 +350,6 @@ def web():
     def ask(task: str, kind: str, detail: str) -> dict:
         return guardian.check(task, Action(kind, detail)).as_event()
 
-    return create_api(runs, os.environ["ACCESS_TOKEN"], Path("/root/web"), launch, read_build, read_shot, ask)
+    return create_api(
+        runs, os.environ["ACCESS_TOKEN"], Path("/root/web"), launch, read_build, read_shot, ask, decide=decide
+    )

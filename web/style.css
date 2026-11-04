@@ -218,3 +218,23 @@ svg.lanes path.mk-ask, svg.lanes circle.mk-ask { stroke: var(--warn); stroke-wid
 .legend .lg.flag { border-color: var(--warn); background: var(--warn-soft); }
 .legend .lg.block { border: 0; border-radius: 0; background: linear-gradient(45deg, transparent 42%, var(--bad) 42% 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, var(--bad) 42% 58%, transparent 58%); }
 .legend .lg.ask { border-color: var(--warn); background: var(--warn-soft); border-radius: 2px; }
+.live-out { display: grid; gap: 12px; margin-top: 12px; }
+.live-card { border: 1px solid var(--line); border-left: 5px solid var(--persona); border-radius: var(--radius); padding: 12px 14px; background: var(--panel); }
+.live-card .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+.live-card .head .hint { margin: 0; }
+.live-card .head .when { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.live-name { color: var(--persona); font-size: 15px; }
+.live-steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 4px 0 10px; counter-reset: s; }
+.live-steps li { counter-increment: s; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.live-steps li::before { content: counter(s) ". "; }
+.live-steps li.active { background: var(--guard-soft); color: var(--guard); border-color: var(--guard); font-weight: 600; animation: pulse 1.2s ease-in-out infinite; }
+.live-steps li.done { background: var(--good-soft); color: var(--good); border-color: transparent; }
+@keyframes pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .live-steps li.active { animation: none; } .final .fill { transition: none !important; } }
+.matrix.live td.cell-wait, .matrix.live b.cell-wait { color: transparent !important; background: var(--bg) !important; }
+.matrix.live td { transition: background-color .25s, color .25s; }
+.matrix.live .final .fill { width: 0; transition: width .9s ease-out; }
+.formula { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin: 8px 0 0; min-height: 1.4em; }
+fieldset.owners { border: 0; padding: 0; margin: 10px 0 0; display: flex; gap: 16px; flex-wrap: wrap; }
+fieldset.owners legend { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+fieldset.owners label.check { margin-top: 0; }
