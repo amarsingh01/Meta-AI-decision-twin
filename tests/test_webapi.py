@@ -145,3 +145,27 @@ def test_live_decision_jobs_and_limits():
     assert client.post("/api/decide", json={**body, "personas": ["hacker"]}).status_code == 422
     assert client.post("/api/decide", json={**body, "options": ["only one"]}).status_code == 422
     assert client.get("/api/decide/../../x").status_code in (400, 404)
+
+
+def test_built_vite_site_paths_are_rewritten():
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, body in {
+            "./index.html": b'<script type="module" src="/src/main.ts"></script>',
+            "./dist/index.html": b'<script type="module" src="/assets/app.js"></script>',
+            "./dist/assets/app.js": b'fetch("/data/snap.json")',
+            "./dist/data/snap.json": b"{}",
+        }.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(body)
+            tar.addfile(info, io.BytesIO(body))
+    run = "20261104-010001-440d09"
+    client = TestClient(create_api({}, TOKEN, WEB, lambda *a: None, read_build=lambda r: buf.getvalue()))
+    page = client.get(f"/built/{run}/")
+    assert f"/built/{run}/assets/app.js" in page.text and "/src/main.ts" not in page.text
+    js = client.get(f"/built/{run}/assets/app.js")
+    assert js.status_code == 200 and f'"/built/{run}/data/snap.json"' in js.text
+    assert js.headers["access-control-allow-origin"] == "*"

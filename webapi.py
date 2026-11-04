@@ -36,6 +36,7 @@ BUILT_CSP = (
     "frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
 )
 BUILT_TYPES = {".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".ico", ".txt", ".md", ".csv"}
+SITE_DIRS = ("dist", "build", "out", "public", "rendered")
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_./-]{1,200}$")
 
 CSP = (
@@ -345,27 +346,38 @@ def create_api(
                         return f.read(), mimetypes.guess_type(path)[0] or "text/plain"
         return None
 
+    def _site_root(run_id: str) -> tuple[str, list[str]]:
+        """The folder that holds the built site (dist/, build/ ...) and its top-level entries."""
+        data = read_build(run_id)
+        if not data:
+            return "", []
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+            names = [m.name.removeprefix("./") for m in tar.getmembers()]
+        root = next((d for d in SITE_DIRS if f"{d}/index.html" in names), "")
+        prefix = f"{root}/" if root else ""
+        tops = sorted({n[len(prefix) :].split("/")[0] for n in names if n.startswith(prefix) and n != prefix})
+        return root, [t for t in tops if t and re.fullmatch(r"[\w.-]+", t)]
+
     @api.get("/built/{run_id}/{path:path}")
     def built(run_id: str, path: str = ""):
-        found = (
-            _build_file(run_id, path or "index.html")
-            or _build_file(run_id, f"{path.rstrip('/')}/index.html".lstrip("/"))
-            or (
-                None
-                if path
-                else next(
-                    (
-                        f
-                        for d in ("dist", "build", "public", "out", "rendered")
-                        if (f := _build_file(run_id, f"{d}/index.html"))
-                    ),
-                    None,
-                )
-            )
-        )
+        if not RUN_ID.match(run_id):
+            raise HTTPException(404)
+        root, tops = _site_root(run_id)
+        rel = path.strip("/")
+        candidates = [f"{root}/{rel}".strip("/") if rel else f"{root}/index.html".strip("/")]
+        if rel:
+            candidates += [f"{root}/{rel}/index.html".strip("/"), rel]
+        found = next((f for c in candidates if (f := _build_file(run_id, c))), None)
         if not found:
             raise HTTPException(404)
-        return Response(content=found[0], media_type=found[1])
+        body, mime = found
+        if mime in {"text/html", "text/css", "text/javascript", "application/javascript"} and tops:
+            # Built sites use absolute paths (/assets/x.js); point them at this build's own folder.
+            base = f"/built/{run_id}/"
+            names = "|".join(re.escape(t) for t in tops)
+            pattern = re.compile(r"""(["'`(=]\s*)/(""" + names + r""")(?=[/"'`)?#])""")
+            body = pattern.sub(lambda m: f"{m.group(1)}{base}{m.group(2)}", body.decode("utf-8", "replace")).encode()
+        return Response(content=body, media_type=mime, headers={"Access-Control-Allow-Origin": "*"})
 
     @api.get("/api/runs/{run_id}/screenshot.png")
     def screenshot(run_id: str):
