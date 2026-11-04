@@ -113,6 +113,10 @@ def summarise_run(store: MutableMapping[str, Any], run_id: str) -> dict:
         "started": None,
         "ended": None,
         "persona": None,
+        "marks": [],  # timeline of what happened without the owner: decisions and guardian stops
+        "auto_decisions": 0,
+        "flagged": 0,
+        "asked_owner": 0,
     }
     for ev in events:
         t = ev.get("type")
@@ -121,6 +125,11 @@ def summarise_run(store: MutableMapping[str, Any], run_id: str) -> dict:
             out["started"], out["persona"] = ev.get("ts"), ev.get("persona")
         elif t == "decision":
             d = ev["decision"]
+            out["auto_decisions"] += 1
+            out["flagged"] += bool(d.get("needs_human"))
+            out["marks"].append(
+                {"t": ev.get("ts"), "kind": "flagged" if d.get("needs_human") else "decision", "label": d["question"]}
+            )
             chosen = next((o for o in d["options"] if o["id"] == d.get("chosen")), None)
             if d["question"].startswith("The worker says the build is finished"):
                 continue
@@ -138,6 +147,15 @@ def summarise_run(store: MutableMapping[str, Any], run_id: str) -> dict:
         elif t == "guardian":
             out["checked"] += 1
             out["model_reviews"] += ev.get("layer") == "model"
+            if ev.get("decision") != "allow":
+                out["asked_owner"] += ev.get("decision") == "ask"
+                out["marks"].append(
+                    {
+                        "t": ev.get("at") or ev.get("ts"),
+                        "kind": "ask" if ev.get("decision") == "ask" else "block",
+                        "label": ev.get("action"),
+                    }
+                )
             if ev.get("decision") != "allow":
                 out["stopped"].append({k: ev.get(k) for k in ("decision", "action", "reason", "layer", "redteam")})
         elif t == "verification":

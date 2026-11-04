@@ -63,6 +63,17 @@ it. 25 of the 35 checks are settled by rules in under a millisecond; 10 need a m
 local model is as strict as Spark on attacks; it is more cautious on one legitimate action (it blocks
 `uname -a` during a performance investigation), which costs the owner a click, not a breach. This is a small, hand-written test set, not a benchmark.
 
+## Many threads, one owner
+
+A person can reason about one thing at a time, but usually has many threads open, and every thread
+that needs a decision waits for them. Here the routine decisions are made from the owner's written
+principles and every action is checked by the guardian, so the threads keep moving on their own.
+Only what truly needs a human (an action the guardian pauses) interrupts the owner; close calls are
+decided and flagged for later review. In the recorded demo three builds ran in parallel for about
+14 minutes: 15 decisions were made by principles, 4 were flagged for review, the guardian checked
+131 actions, and the owner was interrupted 0 times. The dashboard draws this as one timeline per
+thread plus a lane for the owner.
+
 ## Three agents, one task
 
 The dashboard also shows three owners giving OpenClaw the same task, "Amazon Rainforest Live" (live

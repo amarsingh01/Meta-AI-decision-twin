@@ -198,3 +198,23 @@ button.tab[aria-selected="true"] { background: var(--guard); color: #fff; border
 .stopped { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 12px; }
 .task-details summary { cursor: pointer; color: var(--guard); font-size: 14px; }
 .task-details p { font-size: 13px; color: var(--muted); }
+.lead { font-size: 15px; margin: 6px 0 4px; max-width: 75ch; }
+h3.sub { margin-top: 14px; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 15px; }
+.threads { margin: 12px 0; display: grid; gap: 10px; }
+.lanes-wrap { overflow-x: auto; background: var(--bg); border-radius: 8px; padding: 6px; }
+svg.lanes { width: 100%; min-width: 640px; height: auto; display: block; }
+svg.lanes .grid { stroke: var(--line); stroke-width: 1; }
+svg.lanes .tick { fill: var(--muted); font-size: 11px; text-anchor: middle; }
+svg.lanes .lane-name { fill: var(--ink); font-size: 13px; font-weight: 600; }
+svg.lanes .run-bar { opacity: .35; }
+svg.lanes .you-bar { fill: var(--good-soft); stroke: var(--good); stroke-dasharray: 4 3; }
+svg.lanes .you-text { fill: var(--good); font-size: 12px; font-weight: 600; }
+svg.lanes .mk-dec { fill: var(--panel); stroke: var(--ink); stroke-width: 2.5; }
+svg.lanes .mk-flag { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 2.5; }
+svg.lanes .mk-block { stroke: var(--bad); stroke-width: 3; fill: none; }
+svg.lanes path.mk-ask, svg.lanes circle.mk-ask { stroke: var(--warn); stroke-width: 3; fill: var(--warn-soft); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.legend .lg { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 2.5px solid var(--ink); }
+.legend .lg.flag { border-color: var(--warn); background: var(--warn-soft); }
+.legend .lg.block { border: 0; border-radius: 0; background: linear-gradient(45deg, transparent 42%, var(--bad) 42% 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, var(--bad) 42% 58%, transparent 58%); }
+.legend .lg.ask { border-color: var(--warn); background: var(--warn-soft); border-radius: 2px; }

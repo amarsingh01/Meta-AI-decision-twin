@@ -247,11 +247,82 @@ function personaColumn(r) {
   return col;
 }
 
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}, ...kids) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  for (const c of kids.flat()) if (c != null) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return n;
+}
+
+function renderThreads(runs) {
+  const box = $("threads");
+  const live = runs.filter((r) => r.started);
+  if (!live.length) { box.replaceChildren(); return; }
+  const t0 = Math.min(...live.map((r) => r.started));
+  const t1 = Math.max(...live.map((r) => r.ended || r.started));
+  const span = Math.max(60, t1 - t0);
+  const sum = (k) => live.reduce((a, r) => a + (r[k] || 0), 0);
+  const stops = live.reduce((a, r) => a + r.stopped.length, 0);
+  const asked = sum("asked_owner");
+  const stat = (k, v, t) => el("div", { class: "stat", title: t || "" }, el("div", { class: "k" }, k), el("div", { class: "v" }, v));
+  const stats = el("div", { class: "stats" },
+    stat("Projects in parallel", live.length),
+    stat("Wall-clock time", `${Math.round(span / 60)} min`),
+    stat("Decisions made by principles", sum("auto_decisions"), "Every choice the builders raised, answered by each owner's decision twin"),
+    stat("Flagged for later review", sum("flagged"), "Close calls: made, then put in the owner's inbox to look at whenever they like"),
+    stat("Actions checked", sum("checked"), "Every command, file write and fetch, checked by the guardian"),
+    stat("Times the owner was interrupted", asked, "Only actions the guardian paused for a human"));
+
+  const W = 1000, lane = 44, top = 26, left = 120, right = 16;
+  const rows = [...live.map((r) => ({ name: (r.persona && r.persona.short) || r.name, color: (r.persona && r.persona.color) || "#6b3fb5", r })), { name: "You", you: true }];
+  const H = top + rows.length * lane + 10;
+  const x = (t) => left + ((t - t0) / span) * (W - left - right);
+  const g = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "lanes", role: "img",
+    "aria-label": `${live.length} builds ran in parallel for ${Math.round(span / 60)} minutes; ${sum("auto_decisions")} decisions were made by principles and the owner was interrupted ${asked} times.` });
+  for (let m = 0; m <= span / 60; m += span > 1800 ? 10 : 5) {
+    const xx = x(t0 + m * 60);
+    g.append(svg("line", { x1: xx, x2: xx, y1: top - 6, y2: H - 6, class: "grid" }), svg("text", { x: xx, y: 14, class: "tick" }, `${m} min`));
+  }
+  rows.forEach((row, i) => {
+    const y = top + i * lane + lane / 2;
+    g.append(svg("text", { x: 8, y: y + 4, class: "lane-name" }, row.name));
+    if (row.you) {
+      g.append(svg("rect", { x: left, y: y - 9, width: W - left - right, height: 18, rx: 9, class: "you-bar" }),
+        svg("text", { x: left + 12, y: y + 4, class: "you-text" }, asked ? `interrupted ${asked}× — otherwise free to work on something else` : "never interrupted — free to work on something else"));
+      for (const r of live) for (const mk of r.marks.filter((k) => k.kind === "ask"))
+        g.append(svg("circle", { cx: x(mk.t), cy: y, r: 7, class: "mk-ask" }, svg("title", {}, `Asked you: ${mk.label}`)));
+      return;
+    }
+    const r = row.r;
+    const bar = svg("rect", { x: x(r.started), y: y - 7, width: Math.max(4, x(r.ended || r.started) - x(r.started)), height: 14, rx: 7, class: "run-bar" });
+    bar.style.fill = row.color;
+    g.append(bar);
+    for (const mk of r.marks) {
+      const cx = x(mk.t);
+      if (mk.kind === "decision" || mk.kind === "flagged") {
+        g.append(svg("circle", { cx, cy: y, r: 6, class: mk.kind === "flagged" ? "mk-flag" : "mk-dec" },
+          svg("title", {}, `${mk.kind === "flagged" ? "Close call, decided and flagged" : "Decided by principles"}: ${mk.label}`)));
+      } else {
+        g.append(svg("path", { d: `M${cx - 5},${y - 15} l10,10 m0,-10 l-10,10`, class: mk.kind === "block" ? "mk-block" : "mk-ask" },
+          svg("title", {}, `Guardian ${mk.kind === "block" ? "blocked" : "paused"}: ${mk.label}`)));
+      }
+    }
+  });
+  const legend = el("div", { class: "legend" },
+    el("span", {}, el("i", { class: "lg dec" }), "decided by principles"),
+    el("span", {}, el("i", { class: "lg flag" }), "close call, decided and flagged"),
+    el("span", {}, el("i", { class: "lg block" }), "blocked by the guardian"),
+    el("span", {}, el("i", { class: "lg ask" }), "paused for you"));
+  box.replaceChildren(stats, el("div", { class: "lanes-wrap" }, g), legend);
+}
+
 async function loadCompare() {
   try {
     const c = await getJSON("/api/compare");
     if (!c.runs.length) { $("compare-panel").classList.add("hidden"); return; }
     $("compare-task").textContent = c.task;
+    renderThreads(c.runs);
     $("compare").replaceChildren(...c.runs.map(personaColumn));
     if (c.runs.some((r) => r.finished === null)) setTimeout(loadCompare, 20000);
   } catch (e) { $("compare").replaceChildren(el("p", { class: "hint" }, `Could not load: ${e.message}`)); }
